@@ -49,10 +49,9 @@ class RemoteObject(gfal.RemoteObject):
                             cmd, e.stderr.decode()
                         )
                     )
-                else:
-                    # try again after some seconds
-                    time.sleep(1)
-                    continue
+                # try again after some seconds
+                time.sleep(1)
+                continue
 
     def download(self):
         if self.exists():

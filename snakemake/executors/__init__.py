@@ -334,18 +334,13 @@ class RealExecutor(AbstractExecutor):
 
         overwrite_config = []
         if self.workflow.overwrite_configfiles:
-            # add each of the overwriting configfiles in the original order
-            if self.workflow.overwrite_configfiles:
-                overwrite_config.append("--configfiles")
-                overwrite_config.extend(self.workflow.overwrite_configfiles)
+            overwrite_config.append("--configfiles")
+            overwrite_config.extend(self.workflow.overwrite_configfiles)
         if self.workflow.config_args:
             overwrite_config.append("--config")
             overwrite_config.extend(self.workflow.config_args)
 
-        printshellcmds = ""
-        if self.workflow.printshellcmds:
-            printshellcmds = "-p"
-
+        printshellcmds = "-p" if self.workflow.printshellcmds else ""
         if not job.is_branched and not job.is_updated:
             # Restrict considered rules. This does not work for updated jobs
             # because they need to be updated in the spawned process as well.
@@ -364,7 +359,7 @@ class RealExecutor(AbstractExecutor):
         if "cores" in kwargs:
             del kwargs["cores"]
 
-        cmd = format(
+        return format(
             pattern,
             job=job,
             attempt=job.attempt,
@@ -379,7 +374,6 @@ class RealExecutor(AbstractExecutor):
             rules=rules,
             **kwargs,
         )
-        return cmd
 
 
 class TouchExecutor(RealExecutor):
@@ -487,10 +481,8 @@ class CPUExecutor(RealExecutor):
         )
         env_modules = job.env_modules if self.workflow.use_env_modules else None
 
-        benchmark = None
         benchmark_repeats = job.benchmark_repeats or 1
-        if job.benchmark is not None:
-            benchmark = str(job.benchmark)
+        benchmark = str(job.benchmark) if job.benchmark is not None else None
         return (
             job.rule,
             job.input._plainstrings(),
@@ -520,13 +512,12 @@ class CPUExecutor(RealExecutor):
 
     def run_single_job(self, job):
         if self.use_threads or (not job.is_shadow and not job.is_run):
-            future = self.pool.submit(
+            return self.pool.submit(
                 self.cached_or_run, job, run_wrapper, *self.job_args_and_prepare(job)
             )
         else:
             # run directive jobs are spawned into subprocesses
-            future = self.pool.submit(self.cached_or_run, job, self.spawn_job, job)
-        return future
+            return self.pool.submit(self.cached_or_run, job, self.spawn_job, job)
 
     def run_group_job(self, job):
         """Run a pipe group job.
@@ -598,7 +589,7 @@ class CPUExecutor(RealExecutor):
         except SpawnedJobError:
             # don't print error message, this is done by the spawned subprocess
             error_callback(job)
-        except (Exception, BaseException) as ex:
+        except BaseException as ex:
             self.print_job_error(job)
             if not (job.is_group() or job.shellcmd) or self.workflow.verbose:
                 print_exception(ex, self.workflow.linemaps)
@@ -672,7 +663,7 @@ class ClusterExecutor(RealExecutor):
         except IOError as e:
             raise WorkflowError(e)
 
-        if not "jobid" in get_wildcard_names(jobname):
+        if "jobid" not in get_wildcard_names(jobname):
             raise WorkflowError(
                 'Defined jobname ("{}") has to contain the wildcard {jobid}.'
             )
@@ -705,12 +696,12 @@ class ClusterExecutor(RealExecutor):
 
         self.jobname = jobname
         self._tmpdir = None
-        self.cores = cores if cores else "all"
-        self.cluster_config = cluster_config if cluster_config else dict()
+        self.cores = cores or "all"
+        self.cluster_config = cluster_config or dict()
 
         self.restart_times = restart_times
 
-        self.active_jobs = list()
+        self.active_jobs = []
         self.lock = threading.Lock()
         self.wait = True
         self.wait_thread = threading.Thread(target=self._wait_thread)
@@ -938,7 +929,7 @@ class GenericClusterExecutor(ClusterExecutor):
             )
 
         self.statuscmd = statuscmd
-        self.external_jobid = dict()
+        self.external_jobid = {}
 
         super().__init__(
             workflow,
@@ -1086,29 +1077,28 @@ class GenericClusterExecutor(ClusterExecutor):
                         shell=True,
                     ).decode()
                 except subprocess.CalledProcessError as e:
-                    if e.returncode < 0:
-                        # Ignore SIGINT and all other issues due to signals
-                        # because it will be caused by hitting e.g.
-                        # Ctrl-C on the main process or sending killall to
-                        # snakemake.
-                        # Snakemake will handle the signal in
-                        # the main process.
-                        status_cmd_kills.append(-e.returncode)
-                        if len(status_cmd_kills) > 10:
-                            logger.info(
-                                "Cluster status command {} was killed >10 times with signal(s) {} "
-                                "(if this happens unexpectedly during your workflow execution, "
-                                "have a closer look.).".format(
-                                    self.statuscmd, ",".join(status_cmd_kills)
-                                )
-                            )
-                            status_cmd_kills.clear()
-                    else:
+                    if e.returncode >= 0:
                         raise WorkflowError(
                             "Failed to obtain job status. "
                             "See above for error message."
                         )
 
+                    # Ignore SIGINT and all other issues due to signals
+                    # because it will be caused by hitting e.g.
+                    # Ctrl-C on the main process or sending killall to
+                    # snakemake.
+                    # Snakemake will handle the signal in
+                    # the main process.
+                    status_cmd_kills.append(-e.returncode)
+                    if len(status_cmd_kills) > 10:
+                        logger.info(
+                            "Cluster status command {} was killed >10 times with signal(s) {} "
+                            "(if this happens unexpectedly during your workflow execution, "
+                            "have a closer look.).".format(
+                                self.statuscmd, ",".join(status_cmd_kills)
+                            )
+                        )
+                        status_cmd_kills.clear()
                 ret = ret.strip().split("\n")
                 if len(ret) != 1 or ret[0] not in valid_returns:
                     raise WorkflowError(
@@ -1209,7 +1199,7 @@ class SynchronousClusterExecutor(ClusterExecutor):
             keepmetadata=keepmetadata,
         )
         self.submitcmd = submitcmd
-        self.external_jobid = dict()
+        self.external_jobid = {}
 
     def cancel(self):
         logger.info("Will exit after finishing currently running jobs.")
@@ -1254,8 +1244,8 @@ class SynchronousClusterExecutor(ClusterExecutor):
                 if not self.wait:
                     return
                 active_jobs = self.active_jobs
-                self.active_jobs = list()
-                still_running = list()
+                self.active_jobs = []
+                still_running = []
             for active_job in active_jobs:
                 with self.status_rate_limiter:
                     exitcode = active_job.process.poll()
@@ -1333,7 +1323,7 @@ class DRMAAExecutor(ClusterExecutor):
         self.drmaa_args = drmaa_args
         self.drmaa_log_dir = drmaa_log_dir
         self.session.initialize()
-        self.submitted = list()
+        self.submitted = []
 
     def cancel(self):
         from drmaa.const import JobControlAction
@@ -1622,9 +1612,7 @@ class KubernetesExecutor(ClusterExecutor):
                 continue
 
         # Test if the total size of the configMap exceeds 1MB
-        config_map_size = sum(
-            [len(base64.b64decode(v)) for k, v in secret.data.items()]
-        )
+        config_map_size = sum(len(base64.b64decode(v)) for k, v in secret.data.items())
         if config_map_size > 1048576:
             logger.warning(
                 "The total size of the included files and other Kubernetes secrets "
@@ -1828,16 +1816,15 @@ class KubernetesExecutor(ClusterExecutor):
         try:
             self.register_secret()
         except kubernetes.client.rest.ApiException as e:
-            if e.status == 409 and e.reason == "Conflict":
-                logger.warning("409 conflict ApiException when registering secrets")
-                logger.warning(e)
-            else:
+            if e.status != 409 or e.reason != "Conflict":
                 raise WorkflowError(
                     e,
                     "This is likely a bug in "
                     "https://github.com/kubernetes-client/python.",
                 )
 
+            logger.warning("409 conflict ApiException when registering secrets")
+            logger.warning(e)
         if func:
             return func()
 
@@ -1880,8 +1867,8 @@ class KubernetesExecutor(ClusterExecutor):
                 if not self.wait:
                     return
                 active_jobs = self.active_jobs
-                self.active_jobs = list()
-                still_running = list()
+                self.active_jobs = []
+                still_running = []
             for j in active_jobs:
                 with self.status_rate_limiter:
                     logger.debug("Checking status for pod {}".format(j.jobid))
@@ -1982,10 +1969,7 @@ class TibannaExecutor(ClusterExecutor):
         if self.envvars:
             logger.debug("envvars = %s" % str(self.envvars))
         self.tibanna_sfn = tibanna_sfn
-        if precommand:
-            self.precommand = precommand
-        else:
-            self.precommand = ""
+        self.precommand = precommand or ""
         self.s3_bucket = workflow.default_remote_prefix.split("/")[0]
         self.s3_subdir = re.sub(
             "^{}/".format(self.s3_bucket), "", workflow.default_remote_prefix
@@ -2111,14 +2095,13 @@ class TibannaExecutor(ClusterExecutor):
 
     def adjust_filepath(self, f):
         if not hasattr(f, "remote_object"):
-            rel = self.remove_prefix(f)  # log/benchmark
+            return self.remove_prefix(f)
         elif (
             hasattr(f.remote_object, "provider") and f.remote_object.provider.is_default
         ):
-            rel = self.remove_prefix(f)
+            return self.remove_prefix(f)
         else:
-            rel = f
-        return rel
+            return f
 
     def make_tibanna_input(self, job):
         from tibanna import ec2_utils, core as tibanna_core
@@ -2152,12 +2135,12 @@ class TibannaExecutor(ClusterExecutor):
         file_prefix = (
             "file:///data1/snakemake"  # working dir inside snakemake container on VM
         )
-        input_source = dict()
+        input_source = {}
         for ip in job.input:
             ip_rel = self.adjust_filepath(ip)
             input_source[os.path.join(file_prefix, ip_rel)] = "s3://" + ip
-        output_target = dict()
-        output_all = [eo for eo in job.expanded_output]
+        output_target = {}
+        output_all = list(job.expanded_output)
         if job.log:
             if isinstance(job.log, list):
                 output_all.extend([str(_) for _ in job.log])
@@ -2253,7 +2236,7 @@ class TibannaExecutor(ClusterExecutor):
                     return
                 active_jobs = self.active_jobs
                 self.active_jobs = list()
-                still_running = list()
+                still_running = []
             for j in active_jobs:
                 # use self.status_rate_limiter to avoid too many API calls.
                 with self.status_rate_limiter:
@@ -2445,23 +2428,22 @@ def run_wrapper(
         # Re-raise the keyboard interrupt in order to record an error in the
         # scheduler but ignore it
         raise e
-    except (Exception, BaseException) as ex:
+    except BaseException as ex:
         # this ensures that exception can be re-raised in the parent thread
         origin = get_exception_origin(ex, linemaps)
-        if origin is not None:
-            log_verbose_traceback(ex)
-            lineno, file = origin
-            raise RuleException(
-                format_error(
-                    ex, lineno, linemaps=linemaps, snakefile=file, show_traceback=True
-                )
-            )
-        else:
+        if origin is None:
             # some internal bug, just reraise
             raise ex
 
+        log_verbose_traceback(ex)
+        lineno, file = origin
+        raise RuleException(
+            format_error(
+                ex, lineno, linemaps=linemaps, snakefile=file, show_traceback=True
+            )
+        )
     if benchmark is not None:
         try:
             write_benchmark_records(bench_records, benchmark)
-        except (Exception, BaseException) as ex:
+        except BaseException as ex:
             raise WorkflowError(ex)

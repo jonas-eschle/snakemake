@@ -376,14 +376,20 @@ class NCBIHelper(object):
     def guess_db_options_for_extension(
         self, file_ext, db=None, rettype=None, retmode=None
     ):
-        if db and rettype and retmode:
-            if self.is_valid_db_request(db, rettype, retmode):
-                request_options = {}
-                request_options["db"] = db
-                request_options["rettype"] = rettype
-                request_options["retmode"] = retmode
-                request_options["ext"] = file_ext
-                return request_options
+        if (
+            db
+            and rettype
+            and retmode
+            and self.is_valid_db_request(db, rettype, retmode)
+        ):
+            request_options = {
+                'db': db,
+                'rettype': rettype,
+                'retmode': retmode,
+                'ext': file_ext,
+            }
+
+            return request_options
 
         possible_dbs = [db] if db else self.dbs_for_options(file_ext, rettype, retmode)
 
@@ -427,10 +433,10 @@ class NCBIHelper(object):
                 )
             )
         db_options = self.efetch_options[db]
-        for opt in db_options:
-            if opt["rettype"] == rettype and opt["retmode"] == retmode:
-                return True
-        return False
+        return any(
+            opt["rettype"] == rettype and opt["retmode"] == retmode
+            for opt in db_options
+        )
 
     @property
     def valid_dbs(self):
@@ -489,9 +495,8 @@ class NCBIHelper(object):
         retval = 0
         if len(nodes):
             retval = return_type(nodes[0].text)
-        else:
-            if raise_on_failure:
-                raise NCBIFileException("The esummary query failed.")
+        elif raise_on_failure:
+            raise NCBIFileException("The esummary query failed.")
 
         return retval
 
@@ -509,13 +514,12 @@ class NCBIHelper(object):
 
         if count == 1:
             return True
-        else:
-            logger.warning(
-                'The accession specified, "{acc}", could not be found in the database "{db}".\nConsider if you may need to specify a different database via "db=<db_id>".'.format(
-                    acc=accession, db=db
-                )
+        logger.warning(
+            'The accession specified, "{acc}", could not be found in the database "{db}".\nConsider if you may need to specify a different database via "db=<db_id>".'.format(
+                acc=accession, db=db
             )
-            return False
+        )
+        return False
 
     def size(self, accession, db="nuccore"):
         return self._esummary_and_parse(accession, ".//*[@Name='Length']", db=db)
@@ -526,9 +530,7 @@ class NCBIHelper(object):
         )
 
         pattern = "%Y/%m/%d"
-        epoch_update_date = int(time.mktime(time.strptime(update_date, pattern)))
-
-        return epoch_update_date
+        return int(time.mktime(time.strptime(update_date, pattern)))
 
     def fetch_from_ncbi(
         self,
@@ -670,7 +672,7 @@ class NCBIHelper(object):
 
             # if the option is specified, remove the intermediate fasta files
             if remove_separate_files:
-                while len(output_files) > 0:
+                while output_files:
                     os.unlink(output_files.pop())
 
             # add the combined file to the list of files returned
@@ -695,8 +697,7 @@ class NCBIHelper(object):
 
         def esearch_json(term, *args, **kwargs):
             handle = self.entrez.esearch(term=term, *args, **kwargs)
-            json_result = json.loads(handle.read())
-            return json_result
+            return json.loads(handle.read())
 
         def result_ids(json):
             if (

@@ -58,8 +58,7 @@ required:
 
 @pytest.fixture
 def schemadir(tmpdir):
-    p = tmpdir.mkdir("schema")
-    return p
+    return tmpdir.mkdir("schema")
 
 
 @pytest.fixture

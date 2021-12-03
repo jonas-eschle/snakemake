@@ -13,7 +13,7 @@ with open("trace", "r") as fp:
 
 regex = re.compile('.*openat\(.*.snakemake/incomplete".*')
 matches = list(filter(lambda l: regex.match(l), lines))
-if len(matches) > 0:
+if matches:
     sys.stderr.write(repr(matches))
     sys.exit(1)
 

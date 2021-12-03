@@ -109,8 +109,7 @@ class RemoteObject(AbstractRemoteObject):
         return True
 
     def _stat(self):
-        stat = self._gfal("stat", self.remote_file())
-        return stat
+        return self._gfal("stat", self.remote_file())
 
     def mtime(self):
         # assert self.exists()

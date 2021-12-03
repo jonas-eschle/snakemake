@@ -12,7 +12,7 @@ from snakemake.logging import logger
 
 def format_error(ex, lineno, linemaps=None, snakefile=None, show_traceback=False):
     if linemaps is None:
-        linemaps = dict()
+        linemaps = {}
     msg = str(ex)
     if linemaps and snakefile and snakefile in linemaps:
         lineno = linemaps[snakefile][lineno]
@@ -74,7 +74,7 @@ def print_exception(ex, linemaps):
         the compiled lines to source code lines in the snakefile.
     """
     log_verbose_traceback(ex)
-    if isinstance(ex, SyntaxError) or isinstance(ex, IndentationError):
+    if isinstance(ex, (SyntaxError, IndentationError)):
         logger.error(
             format_error(
                 ex,

@@ -82,26 +82,24 @@ class RemoteObject(PooledDomainObject):
     # === Implementations of abstract class members ===
 
     def exists(self):
-        if self._matched_address:
-            with self.connection_pool.item() as sftpc:
-                return sftpc.exists(self.remote_path)
-            return False
-        else:
+        if not self._matched_address:
             raise SFTPFileException(
                 "The file cannot be parsed as an SFTP path in form 'host:port/path/to/file': %s"
                 % self.local_file()
             )
+        with self.connection_pool.item() as sftpc:
+            return sftpc.exists(self.remote_path)
+        return False
 
     def mtime(self):
-        if self.exists():
-            with self.connection_pool.item() as sftpc:
-                # As per local operation, don't follow symlinks when reporting mtime
-                attr = sftpc.lstat(self.remote_path)
-                return int(attr.st_mtime)
-        else:
+        if not self.exists():
             raise SFTPFileException(
                 "The file does not seem to exist remotely: %s" % self.local_file()
             )
+        with self.connection_pool.item() as sftpc:
+            # As per local operation, don't follow symlinks when reporting mtime
+            attr = sftpc.lstat(self.remote_path)
+            return int(attr.st_mtime)
 
     def is_newer(self, time):
         """Returns true if the file is newer than time, or if it is
@@ -113,30 +111,28 @@ class RemoteObject(PooledDomainObject):
             )
 
     def size(self):
-        if self.exists():
-            with self.connection_pool.item() as sftpc:
-                attr = sftpc.stat(self.remote_path)
-                return int(attr.st_size)
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        with self.connection_pool.item() as sftpc:
+            attr = sftpc.stat(self.remote_path)
+            return int(attr.st_size)
 
     def download(self, make_dest_dirs=True):
         with self.connection_pool.item() as sftpc:
-            if self.exists():
-                # if the destination path does not exist
-                if make_dest_dirs:
-                    os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
-
-                sftpc.get(
-                    remotepath=self.remote_path,
-                    localpath=self.local_path,
-                    preserve_mtime=True,
-                )
-                os_sync()  # ensure flush to disk
-            else:
+            if not self.exists():
                 raise SFTPFileException(
                     "The file does not seem to exist remotely: %s" % self.local_file()
                 )
+            # if the destination path does not exist
+            if make_dest_dirs:
+                os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
+
+            sftpc.get(
+                remotepath=self.remote_path,
+                localpath=self.local_path,
+                preserve_mtime=True,
+            )
+            os_sync()  # ensure flush to disk
 
     def mkdir_remote_path(self):
         remote_dir = os.path.dirname(self.remote_path)

@@ -82,10 +82,7 @@ class RemoteObject(AbstractRemoteObject):
 
     def mtime(self):
         if self.exists():
-            # b = self.blob_service_client.get_blob_client(self.container_name, self.blob_name)
-            # return b.get_blob_properties().last_modified
-            t = self._as.blob_last_modified(self.container_name, self.blob_name)
-            return t
+            return self._as.blob_last_modified(self.container_name, self.blob_name)
         raise AzureFileException(
             "The file does not seem to exist remotely: %s" % self.local_file()
         )
@@ -124,18 +121,17 @@ class RemoteObject(AbstractRemoteObject):
         )
 
     def as_create_stub(self):
-        if self._matched_as_path:
-            if not self.exists:
-                self._as.download_from_azure_storage(
-                    self.container_name,
-                    self.blob_name,
-                    self.file,
-                    create_stub_only=True,
-                )
-        else:
+        if not self._matched_as_path:
             raise AzureFileException(
                 "The file to be downloaded cannot be parsed as an Azure Storage path in form 'container/blob': %s"
                 % self.local_file()
+            )
+        if not self.exists:
+            self._as.download_from_azure_storage(
+                self.container_name,
+                self.blob_name,
+                self.file,
+                create_stub_only=True,
             )
 
     @property
@@ -273,13 +269,12 @@ class AzureStorageHelper(object):
         assert blob_name, "blob_name must be specified"
         if destination_path:
             destination_path = os.path.realpath(os.path.expanduser(destination_path))
+        elif expandBlobNameIntoDirs:
+            destination_path = os.path.join(os.getcwd(), blob_name)
         else:
-            if expandBlobNameIntoDirs:
-                destination_path = os.path.join(os.getcwd(), blob_name)
-            else:
-                destination_path = os.path.join(
-                    os.getcwd(), os.path.basename(blob_name)
-                )
+            destination_path = os.path.join(
+                os.getcwd(), os.path.basename(blob_name)
+            )
         # if the destination path does not exist
         if make_dest_dirs:
             os.makedirs(os.path.dirname(destination_path), exist_ok=True)

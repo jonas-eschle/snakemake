@@ -114,48 +114,46 @@ class RemoteObject(AbstractRemoteObject):
         return dt
 
     def mtime(self):
-        if self.exists():
-            obj = self._irods_session.data_objects.get(self.remote_path)
-            meta = self._irods_session.metadata.get(DataObject, self.remote_path)
-
-            # if mtime was set in metadata during upload, take this information
-            # otherwise fall back to iRODS timestamp (upload time!) and change
-            # timezone accordingly (iRODS might ignore the servers local timezone)
-            for m in meta:
-                if m.name == "mtime":
-                    mtime = float(m.value)
-                    break
-            else:
-                dt = self._convert_time(obj.modify_time, self._timezone)
-                utc2 = self._convert_time(utc)
-                mtime = (dt - utc2).total_seconds()
-
-            return int(mtime)
-        else:
+        if not self.exists():
             raise WorkflowError(
                 "The file does not seem to exist remotely: %s" % self.local_file()
             )
+        obj = self._irods_session.data_objects.get(self.remote_path)
+        meta = self._irods_session.metadata.get(DataObject, self.remote_path)
+
+        # if mtime was set in metadata during upload, take this information
+        # otherwise fall back to iRODS timestamp (upload time!) and change
+        # timezone accordingly (iRODS might ignore the servers local timezone)
+        for m in meta:
+            if m.name == "mtime":
+                mtime = float(m.value)
+                break
+        else:
+            dt = self._convert_time(obj.modify_time, self._timezone)
+            utc2 = self._convert_time(utc)
+            mtime = (dt - utc2).total_seconds()
+
+        return int(mtime)
 
     def atime(self):
-        if self.exists():
-            obj = self._irods_session.data_objects.get(self.remote_path)
-            meta = self._irods_session.metadata.get(DataObject, self.remote_path)
-
-            # if mtime was set in metadata during upload, take this information
-            # otherwise fall back to iRODS timestamp (upload time!) and change
-            # timezone accordingly (iRODS might ignore the servers local timezone)
-            for m in meta:
-                if m.name == "atime":
-                    atime = float(m.value)
-                    break
-            else:
-                dt = self._convert_time(obj.modify_time, self._timezone)
-                utc2 = self._convert_time(utc)
-                atime = (dt - utc2).total_seconds()
-
-            return int(atime)
-        else:
+        if not self.exists():
             raise WorkflowError("File doesn't exist remotely: %s" % self.local_file())
+        obj = self._irods_session.data_objects.get(self.remote_path)
+        meta = self._irods_session.metadata.get(DataObject, self.remote_path)
+
+        # if mtime was set in metadata during upload, take this information
+        # otherwise fall back to iRODS timestamp (upload time!) and change
+        # timezone accordingly (iRODS might ignore the servers local timezone)
+        for m in meta:
+            if m.name == "atime":
+                atime = float(m.value)
+                break
+        else:
+            dt = self._convert_time(obj.modify_time, self._timezone)
+            utc2 = self._convert_time(utc)
+            atime = (dt - utc2).total_seconds()
+
+        return int(atime)
 
     def is_newer(self, time):
         """Returns true of the file is newer than time, or if it is
@@ -163,32 +161,30 @@ class RemoteObject(AbstractRemoteObject):
         return self.mtime() > time
 
     def size(self):
-        if self.exists():
-            obj = self._irods_session.data_objects.get(self.remote_path)
-            return int(obj.size)
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        obj = self._irods_session.data_objects.get(self.remote_path)
+        return int(obj.size)
 
     def download(self, make_dest_dirs=True):
-        if self.exists():
-            if make_dest_dirs:
-                os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
-
-            # force irods to overwrite existing file if this option is set
-            opt = {}
-            if self.kwargs.get("overwrite"):
-                opt[kw.FORCE_FLAG_KW] = ""
-
-            # get object and change timestamp
-            obj = self._irods_session.data_objects.get(
-                self.remote_path, self.local_path, options=opt
-            )
-            os.utime(self.local_path, (self.atime(), self.mtime()))
-            os_sync()
-        else:
+        if not self.exists():
             raise WorkflowError(
                 "The file does not seem to exist remotely: %s" % self.local_file()
             )
+        if make_dest_dirs:
+            os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
+
+        # force irods to overwrite existing file if this option is set
+        opt = {}
+        if self.kwargs.get("overwrite"):
+            opt[kw.FORCE_FLAG_KW] = ""
+
+        # get object and change timestamp
+        obj = self._irods_session.data_objects.get(
+            self.remote_path, self.local_path, options=opt
+        )
+        os.utime(self.local_path, (self.atime(), self.mtime()))
+        os_sync()
 
     def upload(self):
         # get current local timestamp

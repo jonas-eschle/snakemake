@@ -84,36 +84,32 @@ class RemoteObject(AbstractRemoteObject):
             return False
 
     def mtime(self):
-        if self.exists():
-            metadata = self._dropboxc.files_get_metadata(self.dropbox_file())
-            epochTime = metadata.server_modified.timestamp()
-            return epochTime
-        else:
+        if not self.exists():
             raise DropboxFileException(
                 "The file does not seem to exist remotely: %s" % self.dropbox_file()
             )
+        metadata = self._dropboxc.files_get_metadata(self.dropbox_file())
+        return metadata.server_modified.timestamp()
 
     def size(self):
-        if self.exists():
-            metadata = self._dropboxc.files_get_metadata(self.dropbox_file())
-            return int(metadata.size)
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        metadata = self._dropboxc.files_get_metadata(self.dropbox_file())
+        return int(metadata.size)
 
     def download(self, make_dest_dirs=True):
-        if self.exists():
-            # if the destination path does not exist, make it
-            if make_dest_dirs:
-                os.makedirs(os.path.dirname(self.local_file()), exist_ok=True)
-
-            self._dropboxc.files_download_to_file(
-                self.local_file(), self.dropbox_file()
-            )
-            os_sync()  # ensure flush to disk
-        else:
+        if not self.exists():
             raise DropboxFileException(
                 "The file does not seem to exist remotely: %s" % self.dropbox_file()
             )
+        # if the destination path does not exist, make it
+        if make_dest_dirs:
+            os.makedirs(os.path.dirname(self.local_file()), exist_ok=True)
+
+        self._dropboxc.files_download_to_file(
+            self.local_file(), self.dropbox_file()
+        )
+        os_sync()  # ensure flush to disk
 
     def upload(self, mode=dropbox.files.WriteMode("overwrite")):
         # Chunk file into 10MB slices because Dropbox does not accept more than 150MB chunks
@@ -150,8 +146,6 @@ class RemoteObject(AbstractRemoteObject):
 
     @property
     def list(self):
-        file_list = []
-
         first_wildcard = self._iofile.constant_prefix()
         dirname = (
             "/" + first_wildcard
@@ -163,9 +157,9 @@ class RemoteObject(AbstractRemoteObject):
             dirname = dirname.replace("//", "/")
         dirname = dirname.rstrip("/")
 
-        for item in self._dropboxc.files_list_folder(dirname, recursive=True).entries:
-            file_list.append(
-                os.path.join(os.path.dirname(item.path_lower), item.name).lstrip("/")
-            )
-
-        return file_list
+        return [
+            os.path.join(os.path.dirname(item.path_lower), item.name).lstrip("/")
+            for item in self._dropboxc.files_list_folder(
+                dirname, recursive=True
+            ).entries
+        ]

@@ -136,15 +136,14 @@ class RemoteObject(AbstractRemoteObject):
             return self._matched_s3_path.group("key")
 
     def s3_create_stub(self):
-        if self._matched_s3_path:
-            if not self.exists:
-                self._s3c.download_from_s3(
-                    self.s3_bucket, self.s3_key, self.file, create_stub_only=True
-                )
-        else:
+        if not self._matched_s3_path:
             raise S3FileException(
                 "The file to be downloaded cannot be parsed as an s3 path in form 'bucket/key': %s"
                 % self.local_file()
+            )
+        if not self.exists:
+            self._s3c.download_from_s3(
+                self.s3_bucket, self.s3_key, self.file, create_stub_only=True
             )
 
 
@@ -265,11 +264,10 @@ class S3Helper(object):
 
         if destination_path:
             destination_path = os.path.realpath(os.path.expanduser(destination_path))
+        elif expandKeyIntoDirs:
+            destination_path = os.path.join(os.getcwd(), key)
         else:
-            if expandKeyIntoDirs:
-                destination_path = os.path.join(os.getcwd(), key)
-            else:
-                destination_path = os.path.join(os.getcwd(), os.path.basename(key))
+            destination_path = os.path.join(os.getcwd(), os.path.basename(key))
 
         # if the destination path does not exist
         if make_dest_dirs:

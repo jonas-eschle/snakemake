@@ -137,13 +137,7 @@ class shell:
 
         func_context = inspect.currentframe().f_back.f_locals
 
-        if func_context.get(RULEFUNC_CONTEXT_MARKER):
-            # If this comes from a rule, we expect certain information to be passed
-            # implicitly via the rule func context, which is added here.
-            context = func_context
-        else:
-            # Otherwise, context is just filled via kwargs.
-            context = dict()
+        context = func_context if func_context.get(RULEFUNC_CONTEXT_MARKER) else dict()
         # add kwargs to context (overwriting the locals of the caller)
         context.update(kwargs)
 
@@ -263,11 +257,9 @@ class shell:
             with cls._lock:
                 cls._processes[jobid] = proc
 
-        ret = None
         if iterable:
             return cls.iter_stdout(proc, cmd, tmpdir)
-        if read:
-            ret = proc.stdout.read()
+        ret = proc.stdout.read() if read else None
         if bench_record is not None:
             from snakemake.benchmark import benchmarked
 

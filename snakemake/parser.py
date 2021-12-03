@@ -359,10 +359,9 @@ class Subworkflow(GlobalKeywordState):
             try:
                 if token.string == "snakefile":
                     self.has_snakefile = True
-                if token.string == "workdir":
+                elif token.string == "workdir":
                     self.has_workdir = True
-                for t in self.subautomaton(token.string).consume():
-                    yield t
+                yield from self.subautomaton(token.string).consume()
             except KeyError:
                 self.error(
                     "Unexpected keyword {} in "
@@ -371,15 +370,11 @@ class Subworkflow(GlobalKeywordState):
                 )
             except StopAutomaton as e:
                 self.indentation(e.token)
-                for t in self.block(e.token):
-                    yield t
+                yield from self.block(e.token)
         elif is_comment(token):
             yield "\n", token
             yield token.string, token
-        elif is_string(token):
-            # ignore docstring
-            pass
-        else:
+        elif not is_string(token):
             self.error(
                 "Expecting subworkflow keyword, comment or docstrings "
                 "inside a subworkflow definition.",
@@ -537,7 +532,7 @@ class AbstractCmd(Run):
         super().__init__(
             snakefile, rulename, base_indent=base_indent, dedent=dedent, root=root
         )
-        self.cmd = list()
+        self.cmd = []
         self.token = None
         if self.overwrite_cmd is not None:
             self.block_content = self.overwrite_block_content
@@ -559,8 +554,7 @@ class AbstractCmd(Run):
         yield "\n"
         yield ")"
         yield "\n"
-        for t in super().start():
-            yield t
+        yield from super().start()
         yield "\n"
         yield INDENT * (self.effective_indent + 1)
         yield self.end_func
@@ -569,8 +563,7 @@ class AbstractCmd(Run):
         yield from self.args()
         yield "\n"
         yield ")"
-        for t in super().end():
-            yield t
+        yield from super().end()
 
     def decorate_end(self, token):
         if self.token is None:
@@ -710,8 +703,7 @@ class Rule(GlobalKeywordState):
         if not self.run:
             yield "@workflow.norun()"
             yield "\n"
-            for t in self.subautomaton("run", rulename=self.rulename).start():
-                yield t
+            yield from self.subautomaton("run", rulename=self.rulename).start()
             # the end is detected.
             # So we can savely reset the indent to zero here
             self.indent = 0
@@ -735,13 +727,7 @@ class Rule(GlobalKeywordState):
     def block_content(self, token):
         if is_name(token):
             try:
-                if (
-                    token.string == "run"
-                    or token.string == "shell"
-                    or token.string == "script"
-                    or token.string == "wrapper"
-                    or token.string == "cwl"
-                ):
+                if token.string in ["run", "shell", "script", "wrapper", "cwl"]:
                     if self.run:
                         raise self.error(
                             "Multiple run or shell keywords in rule {}.".format(
@@ -757,10 +743,9 @@ class Rule(GlobalKeywordState):
                         "rule {}.".format(self.rulename),
                         token,
                     )
-                for t in self.subautomaton(
+                yield from self.subautomaton(
                     token.string, rulename=self.rulename
-                ).consume():
-                    yield t
+                ).consume()
             except KeyError:
                 self.error(
                     "Unexpected keyword {} in rule definition".format(token.string),
@@ -768,8 +753,7 @@ class Rule(GlobalKeywordState):
                 )
             except StopAutomaton as e:
                 self.indentation(e.token)
-                for t in self.block(e.token):
-                    yield t
+                yield from self.block(e.token)
         elif is_comment(token):
             yield "\n", token
             yield token.string, token
@@ -879,12 +863,11 @@ class Module(GlobalKeywordState):
     def block_content(self, token):
         if is_name(token):
             try:
-                if token.string == "snakefile":
-                    self.has_snakefile = True
                 if token.string == "meta_wrapper":
                     self.has_meta_wrapper = True
-                for t in self.subautomaton(token.string).consume():
-                    yield t
+                elif token.string == "snakefile":
+                    self.has_snakefile = True
+                yield from self.subautomaton(token.string).consume()
             except KeyError:
                 self.error(
                     "Unexpected keyword {} in "
@@ -893,15 +876,11 @@ class Module(GlobalKeywordState):
                 )
             except StopAutomaton as e:
                 self.indentation(e.token)
-                for t in self.block(e.token):
-                    yield t
+                yield from self.block(e.token)
         elif is_comment(token):
             yield "\n", token
             yield token.string, token
-        elif is_string(token):
-            # ignore docstring
-            pass
-        else:
+        elif not is_string(token):
             self.error(
                 "Expecting module keyword, comment or docstrings "
                 "inside a module definition.",
@@ -989,15 +968,12 @@ class UseRule(GlobalKeywordState):
 
     def state_rules_comma_or_end(self, token):
         if is_name(token):
-            if token.string == "from" or token.string == "as":
+            if token.string in ["from", "as"]:
                 if not self.rules:
                     self.error(
                         "Expecting rule names after 'use rule' statement.", token
                     )
-                if token.string == "from":
-                    self.state = self.state_from
-                else:
-                    self.state = self.state_as
+                self.state = self.state_from if token.string == "from" else self.state_as
                 yield from ()
             else:
                 self.error(
@@ -1142,19 +1118,18 @@ class Python(TokenAutomaton):
         self.state = self.python
 
     def python(self, token):
-        if not (is_indent(token) or is_dedent(token)):
-            if self.lasttoken is None or self.lasttoken.isspace():
-                try:
-                    for t in self.subautomaton(token.string).consume():
-                        yield t
-                except KeyError:
-                    yield token.string, token
-                except StopAutomaton as e:
-                    self.indentation(e.token)
-                    for t in self.python(e.token):
-                        yield t
-            else:
+        if (is_indent(token) or is_dedent(token)):
+            return
+        if self.lasttoken is None or self.lasttoken.isspace():
+            try:
+                yield from self.subautomaton(token.string).consume()
+            except KeyError:
                 yield token.string, token
+            except StopAutomaton as e:
+                self.indentation(e.token)
+                yield from self.python(e.token)
+        else:
+            yield token.string, token
 
 
 class Snakefile:
@@ -1191,18 +1166,20 @@ def parse(path, workflow, overwrite_shellcmd=None, rulecount=0):
     Shell.overwrite_cmd = overwrite_shellcmd
     with Snakefile(path, workflow, rulecount=rulecount) as snakefile:
         automaton = Python(snakefile)
-        linemap = dict()
-        compilation = list()
+        linemap = {}
+        compilation = []
         for t, orig_token in automaton.consume():
             l = lineno(orig_token)
             linemap.update(
-                dict(
-                    (i, l)
+                {
+                    i: l
                     for i in range(
-                        snakefile.lines + 1, snakefile.lines + t.count("\n") + 1
+                        snakefile.lines + 1,
+                        snakefile.lines + t.count("\n") + 1,
                     )
-                )
+                }
             )
+
             snakefile.lines += t.count("\n")
             compilation.append(t)
         compilation = "".join(format_tokens(compilation))

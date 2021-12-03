@@ -43,7 +43,7 @@ class RemoteProvider(AbstractRemoteProvider):
         self.retry = retry
         self._token = None
         self._expires = None
-        self._file_cache = dict()
+        self._file_cache = {}
 
     def _login(self):
         if self._expires is not None and self._expires > time.time():
@@ -139,8 +139,7 @@ class RemoteProvider(AbstractRemoteProvider):
                 "Access to EGA API endpoint {} failed " "with:\n{}".format(url, r.text)
             )
         if json:
-            msg = r.json()
-            return msg
+            return r.json()
         else:
             return r
 
@@ -222,7 +221,7 @@ class RemoteObject(AbstractRemoteObject):
         os.makedirs(os.path.dirname(self.local_file()), exist_ok=True)
 
         with open(self.local_file(), "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 1024 * 10):
+            for chunk in r.iter_content(chunk_size=1024**2 * 10):
                 local_md5.update(chunk)
                 f.write(chunk)
         local_md5 = local_md5.hexdigest()

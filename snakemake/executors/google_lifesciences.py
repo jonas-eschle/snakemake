@@ -255,7 +255,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
                 return
 
         # If we get here, choose based on prefix
-        prefixes = set([r.split("-")[0] for r in self.regions])
+        prefixes = {r.split("-")[0] for r in self.regions}
         regexp = "^(%s)" % "|".join(prefixes)
         for location in locations:
             if re.search(regexp, location):
@@ -308,7 +308,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
             logger.debug("Cancelling operation {}".format(job.jobid))
             try:
                 self._retry_request(request)
-            except (Exception, BaseException, googleapiclient.errors.HttpError):
+            except BaseException:
                 continue
 
         self.shutdown()
@@ -446,7 +446,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
         )
 
         # First pass - eliminate anything that too low in cpu/memory
-        keepers = dict()
+        keepers = {}
 
         # Also keep track of max cpus and memory, in case none available
         max_cpu = 1
@@ -462,7 +462,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
         # If a prefix is set, filter down to it
         if self.machine_type_prefix:
             machine_types = keepers
-            keepers = dict()
+            keepers = {}
             for name, machine_type in machine_types.items():
                 if name.startswith(self.machine_type_prefix):
                     keepers[name] = machine_type
@@ -539,8 +539,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
                 {"type": accelerator["name"], "count": gpu_count}
             ]
 
-        resources = {"regions": self.regions, "virtualMachine": virtual_machine}
-        return resources
+        return {"regions": self.regions, "virtualMachine": virtual_machine}
 
     def _get_accelerator(self, gpu_count, zone, gpu_model=None):
         """Get an appropriate accelerator for a GPU given a zone selection.
@@ -702,15 +701,13 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
             % (self.bucket.name, self.gs_logs, job.name),
         ]
 
-        # Always run the action to generate log output
-        action = {
+        return {
             "containerName": "snakelog-{}-{}".format(job.name, job.jobid),
             "imageUri": self.container_image,
             "commands": commands,
             "labels": self._generate_pipeline_labels(job),
             "alwaysRun": True,
         }
-        return action
 
     def _generate_job_action(self, job):
         """generate a single action to execute the job."""
@@ -736,16 +733,13 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
             % (self.bucket.name, self.pipeline_package, exec_job),
         ]
 
-        # We are only generating one action, one job per run
-        # https://cloud.google.com/life-sciences/docs/reference/rest/v2beta/projects.locations.pipelines/run#Action
-        action = {
+        return {
             "containerName": "snakejob-{}-{}".format(job.name, job.jobid),
             "imageUri": self.container_image,
             "commands": commands,
             "environment": self._generate_environment(),
             "labels": self._generate_pipeline_labels(job),
         }
-        return action
 
     def _get_jobname(self, job):
         # Use a dummy job name (human readable and also namespaced)
@@ -756,8 +750,7 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
         snakemake is running the show!
         """
         jobname = self._get_jobname(job)
-        labels = {"name": jobname, "app": "snakemake"}
-        return labels
+        return {"name": jobname, "app": "snakemake"}
 
     def _generate_environment(self):
         """loop through envvars (keys to host environment) and add
@@ -785,7 +778,8 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
         action = self._generate_job_action(job)
         log_action = self._generate_log_action(job)
 
-        pipeline = {
+        # "timeout": string in seconds (3.5s) is not included (defaults to 7 days)
+        return {
             # Ordered list of actions to execute
             "actions": [action, log_action],
             # resources required for execution
@@ -794,9 +788,6 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
             # For now we will set them to be the same.
             "environment": self._generate_environment(),
         }
-
-        # "timeout": string in seconds (3.5s) is not included (defaults to 7 days)
-        return pipeline
 
     def run(self, job, callback=None, submit_callback=None, error_callback=None):
 
@@ -930,8 +921,8 @@ class GoogleLifeSciencesExecutor(ClusterExecutor):
                 if not self.wait:
                     return
                 active_jobs = self.active_jobs
-                self.active_jobs = list()
-                still_running = list()
+                self.active_jobs = []
+                still_running = []
 
             # Loop through active jobs and act on status
             for j in active_jobs:

@@ -227,7 +227,7 @@ def get_exec_class(language):
     exec_class = {
         "jupyter_python": PythonJupyterNotebook,
         "jupyter_r": RJupyterNotebook,
-    }.get(language, None)
+    }.get(language)
     if exec_class is None:
         raise ValueError("Unsupported notebook: Expecting Jupyter Notebook (.ipynb).")
     return exec_class
@@ -263,31 +263,27 @@ def notebook(
     """
     draft = False
     if edit is not None:
-        if is_local_file(path):
-            if not os.path.isabs(path):
-                local_path = os.path.join(basedir, path)
-            else:
-                local_path = path
-            if not os.path.exists(local_path):
-                # draft the notebook, it does not exist yet
-                language = None
-                draft = True
-                path = "file://{}".format(os.path.abspath(local_path))
-                if path.endswith(".py.ipynb"):
-                    language = "jupyter_python"
-                elif path.endswith(".r.ipynb"):
-                    language = "jupyter_r"
-                else:
-                    raise WorkflowError(
-                        "Notebook to edit has to end on .py.ipynb or .r.ipynb in order "
-                        "to decide which programming language shall be used."
-                    )
-        else:
+        if not is_local_file(path):
             raise WorkflowError(
                 "Notebook {} is not local, but edit mode is only allowed for "
                 "local notebooks.".format(path)
             )
 
+        local_path = os.path.join(basedir, path) if not os.path.isabs(path) else path
+        if not os.path.exists(local_path):
+            # draft the notebook, it does not exist yet
+            language = None
+            draft = True
+            path = "file://{}".format(os.path.abspath(local_path))
+            if path.endswith(".py.ipynb"):
+                language = "jupyter_python"
+            elif path.endswith(".r.ipynb"):
+                language = "jupyter_r"
+            else:
+                raise WorkflowError(
+                    "Notebook to edit has to end on .py.ipynb or .r.ipynb in order "
+                    "to decide which programming language shall be used."
+                )
     if not draft:
         path, source, language, is_local = get_source(
             path, SourceCache(runtime_sourcecache_path), basedir, wildcards, params
@@ -325,7 +321,7 @@ def notebook(
         is_local,
     )
 
-    if edit is None:
+    if edit is None or not edit.draft_only and not draft:
         executor.evaluate(edit=edit)
     elif edit.draft_only:
         executor.draft()
@@ -342,7 +338,5 @@ def notebook(
                 "\nconda activate {}\njupyter notebook {}\n".format(conda_env, path)
             )
         logger.info(msg)
-    elif draft:
-        executor.draft_and_edit(listen=edit)
     else:
-        executor.evaluate(edit=edit)
+        executor.draft_and_edit(listen=edit)

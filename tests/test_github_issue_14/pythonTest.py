@@ -9,7 +9,5 @@ print(dname)
 if not dname.endswith(os.path.join(".snakemake", "scripts")):
     sys.exit("We're not being written in the output directory!\n")
 
-# Write out script to indicte success.
-of = open(snakemake.output[0], "w")
-of.write("local_script.contents {}\n".format(local_script.contents))
-of.close()
+with open(snakemake.output[0], "w") as of:
+    of.write("local_script.contents {}\n".format(local_script.contents))

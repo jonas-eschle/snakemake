@@ -48,7 +48,7 @@ class ColorizingStreamHandler(_logging.StreamHandler):
             return False
         if mode == Mode.subprocess:
             return True
-        return self.is_tty and not platform.system() == "Windows"
+        return self.is_tty and platform.system() != "Windows"
 
     @property
     def is_tty(self):
@@ -235,10 +235,7 @@ class WMSLogger:
     @property
     def _headers(self):
         """return authenticated headers if the user has provided a token"""
-        headers = None
-        if self.token:
-            headers = {"Authorization": "Bearer %s" % self.token}
-        return headers
+        return {"Authorization": "Bearer %s" % self.token} if self.token else None
 
     def _parse_message(self, msg):
         """Given a message dictionary, we want to loop through the key, value
@@ -249,17 +246,15 @@ class WMSLogger:
         for key, value in msg.items():
 
             # For a job, the name is sufficient
-            if key == "job":
-                result[key] = str(value)
-
-            # For an exception, return the name and a message
-            elif key == "exception":
+            if key == "exception":
                 result[key] = "%s: %s" % (
                     msg["exception"].__class__.__name__,
                     msg["exception"] or "Exception",
                 )
 
-            # All other fields are json serializable
+            elif key == "job":
+                result[key] = str(value)
+
             else:
                 result[key] = value
 
@@ -602,9 +597,7 @@ class Logger:
 def format_dict(dict_like, omit_keys=[], omit_values=[]):
     from snakemake.io import Namedlist
 
-    if isinstance(dict_like, Namedlist):
-        items = dict_like.items()
-    elif isinstance(dict_like, dict):
+    if isinstance(dict_like, (Namedlist, dict)):
         items = dict_like.items()
     else:
         raise ValueError(
@@ -635,7 +628,7 @@ def format_percentage(done, total):
     fraction = done / total
     fmt_precision = "{{:.{}%}}".format
     fmt = lambda fraction: fmt_precision(precision).format(fraction)
-    while fmt(fraction) == "100%" or fmt(fraction) == "0%":
+    while fmt(fraction) in ["100%", "0%"]:
         precision += 1
     return fmt(fraction)
 

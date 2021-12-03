@@ -18,7 +18,7 @@ class OutputIndex:
 
         def calc_trie(subpatterns):
             t = datrie.Trie("".join(p for rule in rules for p in subpatterns(rule)))
-            empty = list()
+            empty = []
             for rule in rules:
                 has_empty = False
                 for p in subpatterns(rule):

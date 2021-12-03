@@ -91,8 +91,7 @@ def validate(data, schema, set_default=True):
                 if "default" in subschema:
                     instance.setdefault(property, subschema["default"])
 
-            for error in validate_properties(validator, properties, instance, schema):
-                yield error
+            yield from validate_properties(validator, properties, instance, schema)
 
         return validators.extend(validator_class, {"properties": set_defaults})
 
@@ -536,29 +535,23 @@ def argvquote(arg, force=True):
     suggestions outlined here:
     https://blogs.msdn.microsoft.com/twistylittlepassagesallalike/2011/04/23/everyone-quotes-command-line-arguments-the-wrong-way/
     """
-    if not force and len(arg) != 0 and not any([c in arg for c in ' \t\n\v"']):
+    if not force and len(arg) != 0 and all(c not in arg for c in ' \t\n\v"'):
         return arg
-    else:
+    n_backslashes = 0
+    cmdline = '"'
+    for c in arg:
+        if c == "\\":
+            # first count the number of current backslashes
+            n_backslashes += 1
+            continue
+        cmdline += (n_backslashes * 2 + 1) * "\\" if c == '"' else n_backslashes * "\\"
         n_backslashes = 0
-        cmdline = '"'
-        for c in arg:
-            if c == "\\":
-                # first count the number of current backslashes
-                n_backslashes += 1
-                continue
-            if c == '"':
-                # Escape all backslashes and the following double quotation mark
-                cmdline += (n_backslashes * 2 + 1) * "\\"
-            else:
-                # backslashes are not special here
-                cmdline += n_backslashes * "\\"
-            n_backslashes = 0
-            cmdline += c
-        # Escape all backslashes, but let the terminating
-        # double quotation mark we add below be interpreted
-        # as a metacharacter
-        cmdline += +n_backslashes * 2 * "\\" + '"'
-        return cmdline
+        cmdline += c
+    # Escape all backslashes, but let the terminating
+    # double quotation mark we add below be interpreted
+    # as a metacharacter
+    cmdline += +n_backslashes * 2 * "\\" + '"'
+    return cmdline
 
 
 def cmd_exe_quote(arg):

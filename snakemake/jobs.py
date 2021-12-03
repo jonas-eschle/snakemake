@@ -76,7 +76,7 @@ class AbstractJob:
 
 class JobFactory:
     def __init__(self):
-        self.cache = dict()
+        self.cache = {}
 
     def new(
         self,
@@ -186,11 +186,11 @@ class Job(AbstractJob):
         self._attempt = self.dag.workflow.attempt
 
         # TODO get rid of these
-        self.pipe_output = set(f for f in self.output if is_flagged(f, "pipe"))
+        self.pipe_output = {f for f in self.output if is_flagged(f, "pipe")}
         self.dynamic_output, self.dynamic_input = set(), set()
         self.temp_output, self.protected_output = set(), set()
         self.touch_output = set()
-        self.subworkflow_input = dict()
+        self.subworkflow_input = {}
         for f in self.output:
             f_ = output_mapping[f]
             if f_ in self.rule.dynamic_output:
@@ -249,9 +249,8 @@ class Job(AbstractJob):
             assert os.path.exists(path), "cannot find {0}".format(path)
             script_mtime = os.lstat(path).st_mtime
             for f in self.expanded_output:
-                if f.exists:
-                    if not f.is_newer(script_mtime):
-                        yield f
+                if f.exists and not f.is_newer(script_mtime):
+                    yield f
         # TODO also handle remote file case here.
 
     @property
@@ -466,7 +465,7 @@ class Job(AbstractJob):
 
     @property
     def is_pipe(self):
-        return any([is_flagged(o, "pipe") for o in self.output])
+        return any(is_flagged(o, "pipe") for o in self.output)
 
     @property
     def expanded_output(self):
@@ -509,28 +508,19 @@ class Job(AbstractJob):
     def missing_input(self):
         """Return missing input files."""
         # omit file if it comes from a subworkflow
-        return set(
-            f for f in self.input if not f.exists and not f in self.subworkflow_input
-        )
+        return {
+            f
+            for f in self.input
+            if not f.exists and f not in self.subworkflow_input
+        }
 
     @property
     def existing_remote_input(self):
-        files = set()
-
-        for f in self.input:
-            if f.is_remote:
-                if f.exists_remote:
-                    files.add(f)
-        return files
+        return {f for f in self.input if f.is_remote and f.exists_remote}
 
     @property
     def existing_remote_output(self):
-        files = set()
-
-        for f in self.remote_output:
-            if f.exists_remote:
-                files.add(f)
-        return files
+        return {f for f in self.remote_output if f.exists_remote}
 
     @property
     def missing_remote_input(self):
@@ -613,54 +603,50 @@ class Job(AbstractJob):
 
     @property
     def remote_input_newer_than_local(self):
-        files = set()
-        for f in self.remote_input:
-            if (f.exists_remote and f.exists_local) and (
-                f.mtime.remote() > f.mtime.local(follow_symlinks=True)
-            ):
-                files.add(f)
-        return files
+        return {
+            f
+            for f in self.remote_input
+            if (f.exists_remote and f.exists_local)
+            and (f.mtime.remote() > f.mtime.local(follow_symlinks=True))
+        }
 
     @property
     def remote_input_older_than_local(self):
-        files = set()
-        for f in self.remote_input:
-            if (f.exists_remote and f.exists_local) and (
-                f.mtime.remote() < f.mtime.local(follow_symlinks=True)
-            ):
-                files.add(f)
-        return files
+        return {
+            f
+            for f in self.remote_input
+            if (f.exists_remote and f.exists_local)
+            and (f.mtime.remote() < f.mtime.local(follow_symlinks=True))
+        }
 
     @property
     def remote_output_newer_than_local(self):
-        files = set()
-        for f in self.remote_output:
-            if (f.exists_remote and f.exists_local) and (
-                f.mtime.remote() > f.mtime.local(follow_symlinks=True)
-            ):
-                files.add(f)
-        return files
+        return {
+            f
+            for f in self.remote_output
+            if (f.exists_remote and f.exists_local)
+            and (f.mtime.remote() > f.mtime.local(follow_symlinks=True))
+        }
 
     @property
     def remote_output_older_than_local(self):
-        files = set()
-        for f in self.remote_output:
-            if (f.exists_remote and f.exists_local) and (
-                f.mtime.remote() < f.mtime.local(follow_symlinks=True)
-            ):
-                files.add(f)
-        return files
+        return {
+            f
+            for f in self.remote_output
+            if (f.exists_remote and f.exists_local)
+            and (f.mtime.remote() < f.mtime.local(follow_symlinks=True))
+        }
 
     @property
     def files_to_download(self):
-        toDownload = set()
+        toDownload = {
+            f
+            for f in self.input
+            if f.is_remote
+            and (not f.exists_local and f.exists_remote)
+            and (not self.rule.norun or f.remote_object.keep_local)
+        }
 
-        for f in self.input:
-            if f.is_remote:
-                if (not f.exists_local and f.exists_remote) and (
-                    not self.rule.norun or f.remote_object.keep_local
-                ):
-                    toDownload.add(f)
 
         toDownload = toDownload | self.remote_input_newer_than_local
         return toDownload
@@ -748,19 +734,10 @@ class Job(AbstractJob):
 
         # "minimal" creates symlinks only to the input files in the shadow directory
         # "copy-minimal" creates copies instead
-        if (
-            self.rule.shadow_depth == "minimal"
-            or self.rule.shadow_depth == "copy-minimal"
-        ):
+        if self.rule.shadow_depth in ["minimal", "copy-minimal"]:
             # Re-create the directory structure in the shadow directory
-            for (f, d) in set(
-                [
-                    (item, os.path.dirname(item))
-                    for sublist in [self.input, self.output, self.log]
-                    if sublist is not None
-                    for item in sublist
-                ]
-            ):
+            for (f, d) in set((item, os.path.dirname(item)) for sublist in [self.input, self.output, self.log]
+                            if sublist is not None for item in sublist):
                 if d and not os.path.isabs(d):
                     rel_path = os.path.relpath(d)
                     # Only create subdirectories
@@ -779,20 +756,15 @@ class Job(AbstractJob):
 
             # Symlink or copy the input files
             if self.rule.shadow_depth == "copy-minimal":
-                for rel_path in set(
-                    [os.path.relpath(f) for f in self.input if not os.path.isabs(f)]
-                ):
+                for rel_path in set(os.path.relpath(f) for f in self.input if not os.path.isabs(f)):
                     copy = os.path.join(self.shadow_dir, rel_path)
                     shutil.copy(rel_path, copy)
             else:
-                for rel_path in set(
-                    [os.path.relpath(f) for f in self.input if not os.path.isabs(f)]
-                ):
+                for rel_path in set(os.path.relpath(f) for f in self.input if not os.path.isabs(f)):
                     link = os.path.join(self.shadow_dir, rel_path)
                     original = os.path.relpath(rel_path, os.path.dirname(link))
                     os.symlink(original, link)
 
-        # Shallow simply symlink everything in the working directory.
         elif self.rule.shadow_depth == "shallow":
             for source in os.listdir(cwd):
                 link = os.path.join(self.shadow_dir, source)

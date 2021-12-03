@@ -168,7 +168,7 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
                     return
                 active_jobs = self.active_jobs
                 self.active_jobs = list()
-                still_running = list()
+                still_running = []
 
             for j in active_jobs:
                 with self.status_rate_limiter:  # TODO: this doesn't seem to do anything?
@@ -204,14 +204,10 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
                 raise WorkflowError(direrrmsg.format(checkdir, f))
 
     def _get_members_path(self, overwrite_path, f):
-        if overwrite_path:
-            members_path = overwrite_path
-        else:
-            members_path = os.path.join(
+        return overwrite_path or os.path.join(
                 self.container_workdir,
                 str(os.path.relpath(f)),
             )
-        return members_path
 
     def _prepare_file(
         self,
@@ -223,39 +219,36 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
     ):
         import tes
 
-        # TODO: handle FTP files
-        max_file_size = 131072
         if type not in ["Input", "Output"]:
             raise ValueError("Value for 'model' has to be either 'Input' or 'Output'.")
 
         members = {}
 
-        # Handle remote files
         if hasattr(filename, "is_remote") and filename.is_remote:
             return None
 
-        # Handle local files
-        else:
-            f = os.path.abspath(filename)
+        f = os.path.abspath(filename)
 
-            self._check_file_in_dir(checkdir, f)
+        self._check_file_in_dir(checkdir, f)
 
-            members["path"] = self._get_members_path(overwrite_path, f)
+        members["path"] = self._get_members_path(overwrite_path, f)
 
-            members["url"] = "file://" + f
-            if pass_content:
-                source_file_size = os.path.getsize(f)
-                if source_file_size > max_file_size:
-                    logger.warning(
-                        "Will not pass file '{f}' by content, as it exceeds the "
-                        "minimum supported file size of {max_file_size} bytes "
-                        "defined in the TES specification. Will try to upload "
-                        "file instead.".format(f=f, max_file_size=max_file_size)
-                    )
-                else:
-                    with open(f) as stream:
-                        members["content"] = stream.read()
-                    members["url"] = None
+        members["url"] = "file://" + f
+        if pass_content:
+            source_file_size = os.path.getsize(f)
+            # TODO: handle FTP files
+            max_file_size = 131072
+            if source_file_size > max_file_size:
+                logger.warning(
+                    "Will not pass file '{f}' by content, as it exceeds the "
+                    "minimum supported file size of {max_file_size} bytes "
+                    "defined in the TES specification. Will try to upload "
+                    "file instead.".format(f=f, max_file_size=max_file_size)
+                )
+            else:
+                with open(f) as stream:
+                    members["content"] = stream.read()
+                members["url"] = None
 
         model = getattr(tes.models, type)
         logger.warning(members)
@@ -267,32 +260,25 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
             msgs = [i.message for i in job.jobs if i.message]
             if msgs:
                 description = " & ".join(msgs)
-        else:
-            if job.message:
-                description = job.message
+        elif job.message:
+            description = job.message
 
         return description
 
     def _get_task_inputs(self, job, jobscript, checkdir):
-        inputs = []
-
-        # add workflow sources to inputs
-        for src in self.workflow.get_sources():
-            # exclude missing, hidden, empty and build files
-            if (
-                not os.path.exists(src)
-                or os.path.basename(src).startswith(".")
-                or os.path.getsize(src) == 0
-                or src.endswith(".pyc")
-            ):
-                continue
-            inputs.append(
-                self._prepare_file(
-                    filename=src,
-                    checkdir=checkdir,
-                    pass_content=True,
-                )
+        inputs = [
+            self._prepare_file(
+                filename=src,
+                checkdir=checkdir,
+                pass_content=True,
             )
+            for src in self.workflow.get_sources()
+            if os.path.exists(src)
+            and not os.path.basename(src).startswith(".")
+            and os.path.getsize(src) != 0
+            and not src.endswith(".pyc")
+        ]
+
 
         # add input files to inputs
         for i in job.input:
@@ -344,8 +330,7 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
     def _get_task_executors(self):
         import tes
 
-        executors = []
-        executors.append(
+        return [
             tes.models.Executor(
                 image=self.container_image,
                 command=[  # TODO: info about what is executed is opaque
@@ -354,16 +339,14 @@ class TaskExecutionServiceExecutor(ClusterExecutor):
                 ],
                 workdir=self.container_workdir,
             )
-        )
-        return executors
+        ]
 
     def _get_task(self, job, jobscript):
         import tes
 
         checkdir, _ = os.path.split(self.snakefile)
 
-        task = {}
-        task["name"] = job.format_wildcards(self.jobname)
+        task = {'name': job.format_wildcards(self.jobname)}
         task["description"] = self._get_task_description(job)
         task["inputs"] = self._get_task_inputs(job, jobscript, checkdir)
         task["outputs"] = self._get_task_outputs(job, checkdir)

@@ -161,7 +161,7 @@ class Workflow:
         self.workdir_init = os.path.abspath(os.curdir)
         self._ruleorder = Ruleorder()
         self._localrules = set()
-        self.linemaps = dict()
+        self.linemaps = {}
         self.rule_count = 0
         self.basedir = os.path.dirname(snakefile)
         self.main_snakefile = os.path.abspath(snakefile)
@@ -169,7 +169,7 @@ class Workflow:
         self.included_stack = []
         self.jobscript = jobscript
         self.persistence = None
-        self._subworkflows = dict()
+        self._subworkflows = {}
         self.overwrite_shellcmd = overwrite_shellcmd
         self.overwrite_config = overwrite_config or dict()
         self.overwrite_configfiles = overwrite_configfiles
@@ -181,7 +181,7 @@ class Workflow:
         self._onsuccess = lambda log: None
         self._onerror = lambda log: None
         self._onstart = lambda log: None
-        self._wildcard_constraints = dict()
+        self._wildcard_constraints = {}
         self.debug = debug
         self.verbose = verbose
         self._rulecount = 0
@@ -218,7 +218,7 @@ class Workflow:
         self.overwrite_scatter = overwrite_scatter or dict()
         self.conda_not_block_search_path_envvars = conda_not_block_search_path_envvars
         self.execute_subworkflows = execute_subworkflows
-        self.modules = dict()
+        self.modules = {}
         self.sourcecache = SourceCache()
         self.scheduler_solver_path = scheduler_solver_path
         self._conda_base_path = conda_base_path

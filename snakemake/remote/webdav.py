@@ -118,43 +118,39 @@ class RemoteObject(DomainObject):
             return self.loop.run_until_complete(self.conn.exists(self.webdav_file))
 
     def mtime(self):
-        if self.exists():
-            with self.webdavc() as webdavc:
-                metadata = self.loop.run_until_complete(
-                    self.conn.ls(remote_path=self.webdav_file)
-                )[0]
-                parsed_date = email.utils.parsedate_tz(metadata.mtime)
-                epoch_time = email.utils.mktime_tz(parsed_date)
-                return epoch_time
-        else:
+        if not self.exists():
             raise WorkflowError(
                 "The file does not seem to exist remotely: %s" % self.webdav_file
             )
+        with self.webdavc() as webdavc:
+            metadata = self.loop.run_until_complete(
+                self.conn.ls(remote_path=self.webdav_file)
+            )[0]
+            parsed_date = email.utils.parsedate_tz(metadata.mtime)
+            return email.utils.mktime_tz(parsed_date)
 
     def size(self):
-        if self.exists():
-            with self.webdavc() as webdavc:
-                metadata = self.loop.run_until_complete(
-                    self.conn.ls(remote_path=self.webdav_file)
-                )[0]
-                return int(metadata.size)
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        with self.webdavc() as webdavc:
+            metadata = self.loop.run_until_complete(
+                self.conn.ls(remote_path=self.webdav_file)
+            )[0]
+            return int(metadata.size)
 
     def download(self, make_dest_dirs=True):
-        if self.exists():
-            # if the destination path does not exist, make it
-            if make_dest_dirs:
-                os.makedirs(os.path.dirname(self.local_file()), exist_ok=True)
-            with self.webdavc() as webdavc:
-                self.loop.run_until_complete(
-                    self.conn.download(self.webdav_file, self.local_file())
-                )
-                os_sync()  # ensure flush to disk
-        else:
+        if not self.exists():
             raise WorkflowError(
                 "The file does not seem to exist remotely: %s" % self.webdav_file
             )
+        # if the destination path does not exist, make it
+        if make_dest_dirs:
+            os.makedirs(os.path.dirname(self.local_file()), exist_ok=True)
+        with self.webdavc() as webdavc:
+            self.loop.run_until_complete(
+                self.conn.download(self.webdav_file, self.local_file())
+            )
+            os_sync()  # ensure flush to disk
 
     def upload(self):
         # make containing folder

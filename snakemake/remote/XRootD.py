@@ -64,10 +64,7 @@ class RemoteObject(AbstractRemoteObject):
             **kwargs,
         )
 
-        if provider:
-            self._xrd = provider.remote_interface()
-        else:
-            self._xrd = XRootDHelper()
+        self._xrd = provider.remote_interface() if provider else XRootDHelper()
 
     # === Implementations of abstract class members ===
 
@@ -173,11 +170,12 @@ class XRootDHelper(object):
             # where a file may match more than once.
             # This is okay as long as the statinfo
             # is the same for all of them.
-            relevant_properties = [  # we only need to check front-facing attributes
+            relevant_properties = [
                 x
                 for x in dir(matches[0].statinfo)
-                if not (x[:1] == "_" or x[-2:] == "__")
+                if x[:1] != "_" and x[-2:] != "__"
             ]
+
             assert all(
                 getattr(m.statinfo, p) == getattr(matches[0].statinfo, p)
                 for m in matches[1:]
@@ -254,10 +252,9 @@ class XRootDHelper(object):
         filename = join(dirname, filename)
         for f in self.list_directory(domain, dirname):
             if f.statinfo.flags & StatInfoFlags.IS_DIR:
-                for _f_name in self.list_directory_recursive(
+                yield from self.list_directory_recursive(
                     domain + dirname + f.name + "/"
-                ):
-                    yield _f_name
+                )
             else:
                 # Only yield files as directories don't have timestamps on XRootD
                 yield domain + dirname + f.name
