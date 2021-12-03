@@ -67,8 +67,12 @@ class RuleLinter(Linter):
                 after = match.end()
 
                 if name not in valid_names and (
-                    not (before >= 0 and after < len(rule.shellcmd))
-                    or (rule.shellcmd[before] != "{" and rule.shellcmd[after] != "}")
+                    before < 0
+                    or after >= len(rule.shellcmd)
+                    or (
+                        rule.shellcmd[before] != "{"
+                        and rule.shellcmd[after] != "}"
+                    )
                 ):
                     yield Lint(
                         title="Shell command directly uses variable {} from outside of the rule".format(
@@ -124,7 +128,8 @@ class RuleLinter(Linter):
             not rule.norun
             and not rule.is_handover
             and not rule.is_run
-            and not (rule.conda_env or rule.container_img)
+            and not rule.conda_env
+            and not rule.container_img
         ):
             if rule.env_modules:
                 yield Lint(

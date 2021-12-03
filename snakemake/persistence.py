@@ -38,7 +38,7 @@ class Persistence:
             os.mkdir(self._lockdir)
 
         self.dag = dag
-        self._lockfile = dict()
+        self._lockfile = {}
 
         self._metadata_path = os.path.join(self.path, "metadata")
         self._incomplete_path = os.path.join(self.path, "incomplete")
@@ -195,7 +195,7 @@ class Persistence:
 
     def conda_cleanup_envs(self):
         # cleanup envs
-        in_use = set(env.hash[:8] for env in self.dag.conda_envs.values())
+        in_use = {env.hash[:8] for env in self.dag.conda_envs.values()}
         for d in os.listdir(self.conda_env_path):
             if len(d) >= 8 and d[:8] not in in_use:
                 if os.path.isdir(os.path.join(self.conda_env_path, d)):
@@ -204,7 +204,7 @@ class Persistence:
                     os.remove(os.path.join(self.conda_env_path, d))
 
         # cleanup env archives
-        in_use = set(env.content_hash for env in self.dag.conda_envs.values())
+        in_use = {env.content_hash for env in self.dag.conda_envs.values()}
         for d in os.listdir(self.conda_env_archive_path):
             if d not in in_use:
                 shutil.rmtree(os.path.join(self.conda_env_archive_path, d))
@@ -292,10 +292,12 @@ class Persistence:
 
     def external_jobids(self, job):
         return list(
-            set(
-                self._read_record(self._incomplete_path, f).get("external_jobid", None)
+            {
+                self._read_record(self._incomplete_path, f).get(
+                    "external_jobid", None
+                )
                 for f in job.output
-            )
+            }
         )
 
     def metadata(self, path):
@@ -446,8 +448,7 @@ class Persistence:
         b64id = [b64id[i : i + max_len - 1] for i in range(0, len(b64id), max_len - 1)]
         # prepend dirs with @ (does not occur in b64) to avoid conflict with b64-named files in the same dir
         b64id = ["@" + s for s in b64id[:-1]] + [b64id[-1]]
-        path = os.path.join(subject, *b64id)
-        return path
+        return os.path.join(subject, *b64id)
 
     def all_outputfiles(self):
         # we only look at output files that will be updated

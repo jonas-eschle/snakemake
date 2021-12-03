@@ -203,21 +203,19 @@ class RemoteObject(AbstractRemoteObject):
         return self.blob.exists()
 
     def mtime(self):
-        if self.exists():
-            self.update_blob()
-            t = self.blob.updated
-            return t.timestamp()
-        else:
+        if not self.exists():
             raise WorkflowError(
                 "The file does not seem to exist remotely: %s" % self.local_file()
             )
+        self.update_blob()
+        t = self.blob.updated
+        return t.timestamp()
 
     def size(self):
-        if self.exists():
-            self.update_blob()
-            return self.blob.size // 1024
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        self.update_blob()
+        return self.blob.size // 1024
 
     @retry.Retry(predicate=google_cloud_retry_predicate, deadline=600)
     def download(self):

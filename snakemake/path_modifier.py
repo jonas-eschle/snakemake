@@ -21,8 +21,9 @@ class PathModifier:
             import datrie
 
             self.trie = datrie.Trie(
-                "".join(set(char for prefix in replace_prefix for char in prefix))
+                "".join({char for prefix in replace_prefix for char in prefix})
             )
+
             for prefix, replacement in replace_prefix.items():
                 self.trie[prefix] = replacement
 

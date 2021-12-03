@@ -206,7 +206,7 @@ class Env:
         ) as e:
             shutil.rmtree(env_archive)
             raise WorkflowError("Error downloading conda package {}.".format(pkg_url))
-        except (Exception, BaseException) as e:
+        except BaseException as e:
             shutil.rmtree(env_archive)
             raise e
         return env_archive
@@ -254,11 +254,7 @@ class Env:
                             e, e.stderr.decode()
                         )
                     )
-                return env_path
-            else:
-                # env should be present in the container
-                return env_path
-
+            return env_path
         # Check for broken environment
         if os.path.exists(
             os.path.join(env_path, "env_setup_start")
@@ -418,12 +414,11 @@ class Conda:
 
     def __new__(cls, container_img=None, prefix_path=None):
         with cls.lock:
-            if container_img not in cls.instances:
-                inst = super().__new__(cls)
-                cls.instances[container_img] = inst
-                return inst
-            else:
+            if container_img in cls.instances:
                 return cls.instances[container_img]
+            inst = super().__new__(cls)
+            cls.instances[container_img] = inst
+            return inst
 
     def __init__(self, container_img=None, prefix_path=None):
         if not self.is_initialized:  # avoid superfluous init calls

@@ -86,10 +86,15 @@ directives.register_directive("embeddedfigure", EmbeddedFigure)
 def data_uri(data, filename, encoding="utf8", mime="text/plain"):
     """Craft a base64 data URI from file with proper encoding and mimetype."""
     data = base64.b64encode(data)
-    uri = "data:{mime};charset={charset};filename={filename};base64,{data}" "".format(
-        filename=filename, mime=mime, charset=encoding, data=data.decode("utf-8")
+    return (
+        "data:{mime};charset={charset};filename={filename};base64,{data}"
+        "".format(
+            filename=filename,
+            mime=mime,
+            charset=encoding,
+            data=data.decode("utf-8"),
+        )
     )
-    return uri
 
 
 def mime_from_file(file):
@@ -186,7 +191,7 @@ def report(
 
     text = definitions + text + "\n\n" + "\n\n".join(attachments) + metadata
 
-    overrides = dict()
+    overrides = {}
     if template is not None:
         overrides["template"] = template
     if stylesheet is not None:
@@ -294,7 +299,7 @@ class RuleRecord:
         try:
             lexer = get_lexer_by_name(language)
 
-            highlighted = [
+            return [
                 highlight(
                     source,
                     lexer,
@@ -302,8 +307,6 @@ class RuleRecord:
                 )
                 for source in sources
             ]
-
-            return highlighted
         except pygments.util.ClassNotFound:
             return [
                 '<pre class="source"><code>{}</code></pre>'.format(source)
@@ -431,11 +434,10 @@ class FileRecord:
                 max_height = "2048"
                 # '>' means only larger images scaled down to within max-dimensions
                 max_spec = max_width + "x" + max_height + ">"
-                png = sp.check_output(
+                return sp.check_output(
                     ["magick", "convert", "-resize", max_spec, self.path, "png:-"],
                     stderr=sp.PIPE,
                 )
-                return png
             except sp.CalledProcessError as e:
                 logger.warning(
                     "Failed to convert image to png with "
@@ -451,14 +453,12 @@ class FileRecord:
     def _png_uri(self):
         if self.is_img:
             png = self.png_content
-            if self.mode_embedded:
-                if png is not None:
-                    uri = data_uri(
+            if png is not None:
+                if self.mode_embedded:
+                    return data_uri(
                         png, os.path.basename(self.path) + ".png", mime="image/png"
                     )
-                    return uri
-            else:
-                if png is not None:
+                else:
                     return os.path.join("data/thumbnails", self.id)
 
     def _data_uri(self):

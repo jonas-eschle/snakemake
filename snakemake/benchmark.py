@@ -260,13 +260,13 @@ class BenchmarkTimer(ScheduledPeriodicTimer):
                 self.bench_record.prev_time = this_time
 
             rss /= 1024 * 1024
-            vms /= 1024 * 1024
-            uss /= 1024 * 1024
-            pss /= 1024 * 1024
+            vms /= 1024**2
+            uss /= 1024**2
+            pss /= 1024**2
 
             if check_io:
                 io_in /= 1024 * 1024
-                io_out /= 1024 * 1024
+                io_out /= 1024**2
             else:
                 io_in = None
                 io_out = None

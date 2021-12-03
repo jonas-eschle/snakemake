@@ -190,7 +190,7 @@ class REncoder:
             return cls.encode_dict(value)
         elif isinstance(value, bool):
             return "TRUE" if value else "FALSE"
-        elif isinstance(value, int) or isinstance(value, float):
+        elif isinstance(value, (int, float)):
             return str(value)
         elif isinstance(value, collections.abc.Iterable):
             # convert all iterables to vectors
@@ -251,7 +251,7 @@ class JuliaEncoder:
             return cls.encode_dict(value)
         elif isinstance(value, bool):
             return "true" if value else "false"
-        elif isinstance(value, int) or isinstance(value, float):
+        elif isinstance(value, (int, float)):
             return str(value)
         elif isinstance(value, collections.abc.Iterable):
             # convert all iterables to vectors
@@ -283,10 +283,10 @@ class JuliaEncoder:
 
     @classmethod
     def encode_positional_items(cls, namedlist):
-        encoded = ""
-        for index, value in enumerate(namedlist):
-            encoded += "{} => {}, ".format(index + 1, cls.encode_value(value))
-        return encoded
+        return "".join(
+            "{} => {}, ".format(index + 1, cls.encode_value(value))
+            for index, value in enumerate(namedlist)
+        )
 
     @classmethod
     def encode_dict(cls, d):
@@ -382,14 +382,11 @@ class ScriptBase(ABC):
         except URLError as e:
             raise WorkflowError(e)
         finally:
-            if fd and self.cleanup_scripts:
-                os.remove(fd.name)
-            else:
-                if fd:
-                    logger.warning("Not cleaning up %s" % fd.name)
+            if fd:
+                if self.cleanup_scripts:
+                    os.remove(fd.name)
                 else:
-                    # nothing to clean up (TODO: ??)
-                    pass
+                    logger.warning("Not cleaning up %s" % fd.name)
 
     @property
     def local_path(self):
@@ -663,7 +660,7 @@ class RScript(ScriptBase):
                 {
                     name: value
                     for name, value in resources.items()
-                    if name != "_cores" and name != "_nodes"
+                    if name not in ["_cores", "_nodes"]
                 }
             ),
             REncoder.encode_dict(config),
@@ -772,7 +769,7 @@ class RMarkdown(ScriptBase):
                 {
                     name: value
                     for name, value in self.resources.items()
-                    if name != "_cores" and name != "_nodes"
+                    if name not in ["_cores", "_nodes"]
                 }
             ),
             REncoder.encode_dict(self.config),
@@ -856,13 +853,15 @@ class JuliaScript(ScriptBase):
                     {
                         name: value
                         for name, value in self.resources.items()
-                        if name != "_cores" and name != "_nodes"
+                        if name not in ["_cores", "_nodes"]
                     }
                 ),
                 JuliaEncoder.encode_dict(self.config),
                 JuliaEncoder.encode_value(self.rulename),
                 JuliaEncoder.encode_value(self.bench_iteration),
-                JuliaEncoder.encode_value(self.path.get_basedir().get_path_or_uri()),
+                JuliaEncoder.encode_value(
+                    self.path.get_basedir().get_path_or_uri()
+                ),
             ).replace(
                 "'", '"'
             )
@@ -908,7 +907,7 @@ class RustScript(ScriptBase):
         # and unpacks named items into the dict
         def encode_namedlist(values):
             values = list(values)
-            if len(values) == 0:
+            if not values:
                 return dict(positional=[])
             positional = [val for key, val in values if not key]
             return dict(
@@ -1080,7 +1079,7 @@ class RustScript(ScriptBase):
     def get_preamble(self):
         preamble_addendum = ""
 
-        preamble = RustScript.generate_preamble(
+        return RustScript.generate_preamble(
             self.path,
             self.source,
             self.basedir,
@@ -1105,7 +1104,6 @@ class RustScript(ScriptBase):
             self.is_local,
             preamble_addendum=preamble_addendum,
         )
-        return preamble
 
     def write_script(self, preamble, fd):
         content = self.combine_preamble_and_source(preamble)
@@ -1227,11 +1225,7 @@ def strip_re(regex: Pattern, s: str) -> Tuple[str, str]:
     """
     rgx = re.compile(regex)
     match = rgx.search(s)
-    if match:
-        head, tail = s[: match.end()], s[match.end() :]
-    else:
-        head, tail = "", s
-
+    head, tail = (s[: match.end()], s[match.end() :]) if match else ("", s)
     return head, tail
 
 
@@ -1335,7 +1329,7 @@ def script(
         "rmarkdown": RMarkdown,
         "julia": JuliaScript,
         "rust": RustScript,
-    }.get(language, None)
+    }.get(language)
     if exec_class is None:
         raise ValueError(
             "Unsupported script: Expecting either Python (.py), R (.R), RMarkdown (.Rmd) or Julia (.jl) script."

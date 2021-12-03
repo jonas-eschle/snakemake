@@ -104,7 +104,7 @@ class DAG:
         self.dependencies = defaultdict(partial(defaultdict, set))
         self.depending = defaultdict(partial(defaultdict, set))
         self._needrun = set()
-        self._priority = dict()
+        self._priority = {}
         self._reason = defaultdict(Reason)
         self._finished = set()
         self._dynamic = set()
@@ -121,12 +121,12 @@ class DAG:
         self._ready_jobs = set()
         self.notemp = notemp
         self.keep_remote_local = keep_remote_local
-        self._jobid = dict()
-        self.job_cache = dict()
-        self.conda_envs = dict()
-        self.container_imgs = dict()
+        self._jobid = {}
+        self.job_cache = {}
+        self.conda_envs = {}
+        self.container_imgs = {}
         self._progress = 0
-        self._group = dict()
+        self._group = {}
         self._n_until_ready = defaultdict(int)
         self._running = set()
 
@@ -147,11 +147,11 @@ class DAG:
         if forcefiles:
             self.forcefiles.update(forcefiles)
         if untilrules:
-            self.untilrules.update(set(rule.name for rule in untilrules))
+            self.untilrules.update({rule.name for rule in untilrules})
         if untilfiles:
             self.untilfiles.update(untilfiles)
         if omitrules:
-            self.omitrules.update(set(rule.name for rule in omitrules))
+            self.omitrules.update({rule.name for rule in omitrules})
         if omitfiles:
             self.omitfiles.update(omitfiles)
 
@@ -200,7 +200,7 @@ class DAG:
         self.check_directory_outputs()
 
         # check if remaining jobs are valid
-        for i, job in enumerate(self.jobs):
+        for job in self.jobs:
             job.is_valid()
 
     def check_directory_outputs(self):
@@ -225,9 +225,9 @@ class DAG:
                 yield job
 
     def update_checkpoint_outputs(self):
-        workflow.checkpoints.future_output = set(
+        workflow.checkpoints.future_output = {
             f for job in self.checkpoint_jobs for f in job.output
-        )
+        }
 
     def update_jobids(self):
         for job in self.jobs:
@@ -237,11 +237,8 @@ class DAG:
     def cleanup_workdir(self):
         for job in self.jobs:
             if not self.is_edit_notebook_job(job):
-                for io_dir in set(
-                    os.path.dirname(io_file)
-                    for io_file in chain(job.output, job.input)
-                    if not os.path.exists(io_file)
-                ):
+                for io_dir in {os.path.dirname(io_file) for io_file in chain(job.output, job.input)
+                                if not os.path.exists(io_file)}:
                     if os.path.exists(io_dir) and not len(os.listdir(io_dir)):
                         os.removedirs(io_dir)
 
@@ -283,7 +280,7 @@ class DAG:
             if job.conda_env_file
         }
         # Then based on md5sum values
-        self.conda_envs = dict()
+        self.conda_envs = {}
         for (env_file, simg_url) in env_set:
             simg = None
             if simg_url and self.workflow.use_singularity:
@@ -427,12 +424,11 @@ class DAG:
         for those that are created after the job with dynamic output has
         finished.
         """
-        if job.is_group():
-            for j in job:
-                if j in self._dynamic:
-                    return True
-        else:
+        if not job.is_group():
             return job in self._dynamic
+        for j in job:
+            if j in self._dynamic:
+                return True
 
     def requested_files(self, job):
         """Return the files a job requests."""
@@ -471,10 +467,10 @@ class DAG:
         """
         Return whether a temp file that is input of the given job is missing.
         """
-        for job_, files in self.depending[job].items():
-            if self.needrun(job_) and any(not f.exists for f in files):
-                return True
-        return False
+        return any(
+            self.needrun(job_) and any(not f.exists for f in files)
+            for job_, files in self.depending[job].items()
+        )
 
     def check_and_touch_output(
         self,
@@ -588,8 +584,7 @@ class DAG:
 
     def temp_input(self, job):
         for job_, files in self.dependencies[job].items():
-            for f in filter(job_.temp_output.__contains__, files):
-                yield f
+            yield from filter(job_.temp_output.__contains__, files)
 
     def temp_size(self, job):
         """Return the total size of temporary input files of the job.
@@ -614,7 +609,7 @@ class DAG:
         def unneeded_files():
             # temp input
             for job_, files in self.dependencies[job].items():
-                tempfiles = set(f for f in job_.expanded_output if is_temp(f))
+                tempfiles = {f for f in job_.expanded_output if is_temp(f)}
                 yield from filterfalse(partial(needed, job_), tempfiles & files)
 
             # temp output
@@ -694,10 +689,9 @@ class DAG:
                         if not needed(job_, f):
                             yield f
                 for f, f_ in zip(job.output, job.rule.output):
-                    if putative(f) and not needed(job, f) and not f in self.targetfiles:
+                    if putative(f) and not needed(job, f) and f not in self.targetfiles:
                         if f in job.dynamic_output:
-                            for f_ in job.expand_dynamic(f_):
-                                yield f_
+                            yield from job.expand_dynamic(f_)
                         else:
                             yield f
                 for f in filter(putative, job.input):
@@ -838,7 +832,7 @@ class DAG:
         if visited is None:
             visited = set()
         if known_producers is None:
-            known_producers = dict()
+            known_producers = {}
         visited.add(job)
         dependencies = self.dependencies[job]
         potential_dependencies = self.collect_potential_dependencies(
@@ -848,8 +842,8 @@ class DAG:
         skip_until_dynamic = skip_until_dynamic and not job.dynamic_output
 
         missing_input = set()
-        producer = dict()
-        exceptions = dict()
+        producer = {}
+        exceptions = {}
         for res in potential_dependencies:
             if create_inventory:
                 # If possible, obtain inventory information starting from
@@ -905,16 +899,17 @@ class DAG:
             dependencies[job_].add(file)
             self.depending[job_][job].add(file)
 
-        if self.is_batch_rule(job.rule) and self.batch.is_final:
-            # For the final batch, ensure that all input files from
-            # previous batches are present on disk.
-            if any((f not in producer and not f.exists) for f in job.input):
-                raise WorkflowError(
-                    "Unable to execute batch {} because not all previous batches "
-                    "have been completed before or files have been deleted.".format(
-                        self.batch
-                    )
+        if (
+            self.is_batch_rule(job.rule)
+            and self.batch.is_final
+            and any((f not in producer and not f.exists) for f in job.input)
+        ):
+            raise WorkflowError(
+                "Unable to execute batch {} because not all previous batches "
+                "have been completed before or files have been deleted.".format(
+                    self.batch
                 )
+            )
 
         if missing_input:
             self.delete_job(job, recursive=False)  # delete job from tree
@@ -1109,7 +1104,7 @@ class DAG:
             self._priority[job] = Job.HIGHEST_PRIORITY
 
     def update_groups(self):
-        groups = dict()
+        groups = {}
         for job in self.needrun_jobs:
             if job.group is None:
                 continue
@@ -1258,7 +1253,7 @@ class DAG:
                             "job".format(f),
                             rule=job.rule,
                         )
-                    elif len(depending) == 0:
+                    elif not depending:
                         raise WorkflowError(
                             "Output file {} is marked as pipe "
                             "but it has no consumer. This is "
@@ -1286,10 +1281,9 @@ class DAG:
                 continue
 
             if len(candidate_groups) > 1:
-                if all(isinstance(group, CandidateGroup) for group in candidate_groups):
-                    for g in candidate_groups:
-                        g.merge(group)
-                else:
+                if not all(
+                    isinstance(group, CandidateGroup) for group in candidate_groups
+                ):
                     raise WorkflowError(
                         "An output file is marked as "
                         "pipe, but consuming jobs "
@@ -1297,6 +1291,8 @@ class DAG:
                         "groups.",
                         rule=job.rule,
                     )
+                for g in candidate_groups:
+                    g.merge(group)
             elif candidate_groups:
                 # extend the candidate group to all involved jobs
                 group = candidate_groups.pop()
@@ -1317,13 +1313,12 @@ class DAG:
         group = self._group.get(job, None)
         if group is None:
             return self._n_until_ready[job] == 0
-        else:
-            n_internal_deps = lambda job: sum(
-                self._group.get(dep) == group for dep in self.dependencies[job]
-            )
-            return all(
-                (self._n_until_ready[job] - n_internal_deps(job)) == 0 for job in group
-            )
+        n_internal_deps = lambda job: sum(
+            self._group.get(dep) == group for dep in self.dependencies[job]
+        )
+        return all(
+            (self._n_until_ready[job] - n_internal_deps(job)) == 0 for job in group
+        )
 
     def update_checkpoint_dependencies(self, jobs=None):
         """Update dependencies of checkpoints."""
@@ -1372,11 +1367,7 @@ class DAG:
         except KeyError:
             pass
 
-        if job.is_group():
-            jobs = job
-        else:
-            jobs = [job]
-
+        jobs = job if job.is_group() else [job]
         self._finished.update(jobs)
 
         updated_dag = False
@@ -1625,7 +1616,7 @@ class DAG:
                 continue
             yield job
             for job_ in direction[job].keys():
-                if not job_ in visited:
+                if job_ not in visited:
                     queue.append(job_)
                     visited.add(job_)
 
@@ -1642,7 +1633,7 @@ class DAG:
             yield level, job
             level += 1
             for job_, _ in direction[job].items():
-                if not job_ in visited:
+                if job_ not in visited:
                     queue.append((job_, level))
                     visited.add(job_)
 
@@ -1657,10 +1648,9 @@ class DAG:
             if not post:
                 yield job
             for job_ in direction[job]:
-                if not job_ in visited:
+                if job_ not in visited:
                     visited.add(job_)
-                    for j in _dfs(job_):
-                        yield j
+                    yield from _dfs(job_)
             if post:
                 yield job
 
@@ -2089,18 +2079,17 @@ class DAG:
         """Removes files generated by the workflow."""
         for job in self.jobs:
             for f in job.output:
-                if not only_temp or is_flagged(f, "temp"):
-                    # The reason for the second check is that dangling
-                    # symlinks fail f.exists.
-                    if f.exists or os.path.islink(f):
-                        if f.protected:
-                            logger.error("Skipping write-protected file {}.".format(f))
-                        else:
-                            msg = "Deleting {}" if not dryrun else "Would delete {}"
-                            logger.info(msg.format(f))
-                            if not dryrun:
-                                # Remove non-empty dirs if flagged as temp()
-                                f.remove(remove_non_empty_dir=only_temp)
+                if (not only_temp or is_flagged(f, "temp")) and (
+                    f.exists or os.path.islink(f)
+                ):
+                    if f.protected:
+                        logger.error("Skipping write-protected file {}.".format(f))
+                    else:
+                        msg = "Deleting {}" if not dryrun else "Would delete {}"
+                        logger.info(msg.format(f))
+                        if not dryrun:
+                            # Remove non-empty dirs if flagged as temp()
+                            f.remove(remove_non_empty_dir=only_temp)
 
     def list_untracked(self):
         """List files in the workdir that are not in the dag."""
@@ -2117,10 +2106,11 @@ class DAG:
                 [
                     os.path.relpath(os.path.join(root, f))
                     for f in files
-                    if not f[0] == "."
+                    if f[0] != "."
                 ]
             )
-            dirs[:] = [d for d in dirs if not d[0] == "."]
+
+            dirs[:] = [d for d in dirs if d[0] != "."]
         for f in sorted(list(files_in_cwd - used_files)):
             logger.info(f)
 

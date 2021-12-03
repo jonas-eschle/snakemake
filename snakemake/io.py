@@ -124,10 +124,10 @@ class ExistsDict(dict):
 
 class IOCache:
     def __init__(self, max_wait_time):
-        self.mtime = dict()
+        self.mtime = {}
         self.exists_local = ExistsDict(self)
         self.exists_remote = ExistsDict(self)
-        self.size = dict()
+        self.size = {}
         self.active = True
         self.remaining_wait_time = max_wait_time
         self.max_wait_time = max_wait_time
@@ -240,15 +240,14 @@ class _IOFile(str):
     def iocache(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-            if self.rule.workflow.iocache.active:
-                cache = getattr(self.rule.workflow.iocache, func.__name__)
-                if self in cache:
-                    return cache[self]
-                v = func(self, *args, **kwargs)
-                cache[self] = v
-                return v
-            else:
+            if not self.rule.workflow.iocache.active:
                 return func(self, *args, **kwargs)
+            cache = getattr(self.rule.workflow.iocache, func.__name__)
+            if self in cache:
+                return cache[self]
+            v = func(self, *args, **kwargs)
+            cache[self] = v
+            return v
 
         return wrapper
 
@@ -260,9 +259,8 @@ class _IOFile(str):
 
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
-            if self.is_remote:
-                if hasattr(self.remote_object, func.__name__):
-                    return getattr(self.remote_object, func.__name__)(*args, **kwargs)
+            if self.is_remote and hasattr(self.remote_object, func.__name__):
+                return getattr(self.remote_object, func.__name__)(*args, **kwargs)
             return func(self, *args, **kwargs)
 
         return wrapper
@@ -830,7 +828,7 @@ def wait_for_files(
 
 
 def get_wildcard_names(pattern):
-    return set(match.group("name") for match in _wildcard_regex.finditer(pattern))
+    return {match.group("name") for match in _wildcard_regex.finditer(pattern)}
 
 
 def contains_wildcard(path):
@@ -885,12 +883,7 @@ def regex(filepattern):
             f.append("(?P={})".format(wildcard))
         else:
             wildcards.add(wildcard)
-            f.append(
-                "(?P<{}>{})".format(
-                    wildcard,
-                    match.group("constraint") if match.group("constraint") else ".+",
-                )
-            )
+            f.append("(?P<{}>{})".format(wildcard, match.group("constraint") or ".+"))
         last = match.end()
     f.append(re.escape(filepattern[last:]))
     f.append("$")  # ensure that the match spans the whole file
@@ -941,7 +934,7 @@ def is_callable(value):
 
 class AnnotatedString(str):
     def __init__(self, value):
-        self.flags = dict()
+        self.flags = {}
         self.callable = value if is_callable(value) else None
 
     def new_from(self, new_value):
@@ -971,7 +964,7 @@ def is_flagged(value, flag):
 
 
 def get_flag_value(value, flag_type):
-    if isinstance(value, AnnotatedString) or isinstance(value, _IOFile):
+    if isinstance(value, (AnnotatedString, _IOFile)):
         if flag_type in value.flags:
             return value.flags[flag_type]
         else:
@@ -1267,13 +1260,10 @@ def update_wildcard_constraints(
             return match.group(0)
         examined_names.add(name)
         # Don't override if constraint already set
-        if constraint is not None:
+        if constraint is not None or newconstraint is None:
             return match.group(0)
-        # Only update if a new constraint has actually been set
-        elif newconstraint is not None:
-            return "{{{},{}}}".format(name, newconstraint)
         else:
-            return match.group(0)
+            return "{{{},{}}}".format(name, newconstraint)
 
     examined_names = set()
     updated = _wildcard_regex.sub(replace_constraint, pattern)
@@ -1355,15 +1345,14 @@ def git_content(git_file):
     """
     import git
 
-    if git_file.startswith("git+file:"):
-        (root_path, file_path, version) = split_git_path(git_file)
-        return git.Repo(root_path).git.show("{}:{}".format(version, file_path))
-    else:
+    if not git_file.startswith("git+file:"):
         raise WorkflowError(
             "Provided git path ({}) doesn't meet the "
             "expected format:".format(git_file) + ", expected format is "
             "git+file://PATH_TO_REPO/PATH_TO_FILE_INSIDE_REPO@VERSION"
         )
+    (root_path, file_path, version) = split_git_path(git_file)
+    return git.Repo(root_path).git.show("{}:{}".format(version, file_path))
 
 
 def strip_wildcard_constraints(pattern):
@@ -1398,7 +1387,7 @@ class Namedlist(list):
             Namedlist (keys become names)
         """
         list.__init__(self)
-        self._names = dict()
+        self._names = {}
 
         # white-list of attribute names that can be overridden in _set_name
         # default to throwing exception if called to prevent use as functions
@@ -1469,8 +1458,7 @@ class Namedlist(list):
         """
         Get the defined names as (name, index) pairs.
         """
-        for name, index in self._names.items():
-            yield name, index
+        yield from self._names.items()
 
     def _take_names(self, names):
         """

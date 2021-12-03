@@ -75,11 +75,7 @@ class RemoteProvider(AbstractRemoteProvider):
                         "encrypt_data_channel=True cannot be used with a ftp:// url"
                     )
             else:
-                if encrypt_data_channel:
-                    values[i] = "ftps://" + file
-                else:
-                    values[i] = "ftp://" + file
-
+                values[i] = "ftps://" + file if encrypt_data_channel else "ftp://" + file
         values = [
             super(RemoteProvider, self).remote(
                 value, *args, encrypt_data_channel=encrypt_data_channel, **kwargs
@@ -148,54 +144,50 @@ class RemoteObject(PooledDomainObject):
         connection.close()
 
     def exists(self):
-        if self._matched_address:
-            with self.connection_pool.item() as ftpc:
-                return ftpc.path.exists(self.remote_path)
-            return False
-        else:
+        if not self._matched_address:
             raise FTPFileException(
                 "The file cannot be parsed as an FTP path in form 'host:port/abs/path/to/file': %s"
                 % self.local_file()
             )
+        with self.connection_pool.item() as ftpc:
+            return ftpc.path.exists(self.remote_path)
+        return False
 
     def mtime(self):
-        if self.exists():
-            with self.connection_pool.item() as ftpc:
-                try:
-                    # requires write access
-                    ftpc.synchronize_times()
-                except:
-                    pass
-                return ftpc.path.getmtime(self.remote_path)
-        else:
+        if not self.exists():
             raise FTPFileException(
                 "The file does not seem to exist remotely: %s" % self.local_file()
             )
+        with self.connection_pool.item() as ftpc:
+            try:
+                # requires write access
+                ftpc.synchronize_times()
+            except:
+                pass
+            return ftpc.path.getmtime(self.remote_path)
 
     def size(self):
-        if self.exists():
-            with self.connection_pool.item() as ftpc:
-                return ftpc.path.getsize(self.remote_path)
-        else:
+        if not self.exists():
             return self._iofile.size_local
+        with self.connection_pool.item() as ftpc:
+            return ftpc.path.getsize(self.remote_path)
 
     def download(self, make_dest_dirs=True):
         with self.connection_pool.item() as ftpc:
-            if self.exists():
-                # if the destination path does not exist
-                if make_dest_dirs:
-                    os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
-                try:
-                    # requires write access
-                    ftpc.synchronize_times()
-                except:
-                    pass
-                ftpc.download(source=self.remote_path, target=self.local_path)
-                os_sync()  # ensure flush to disk
-            else:
+            if not self.exists():
                 raise FTPFileException(
                     "The file does not seem to exist remotely: %s" % self.local_file()
                 )
+            # if the destination path does not exist
+            if make_dest_dirs:
+                os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
+            try:
+                # requires write access
+                ftpc.synchronize_times()
+            except:
+                pass
+            ftpc.download(source=self.remote_path, target=self.local_path)
+            os_sync()  # ensure flush to disk
 
     def upload(self):
         with self.connection_pool.item() as ftpc:

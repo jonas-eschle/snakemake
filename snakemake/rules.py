@@ -76,14 +76,14 @@ class Rule:
             self._input = InputFiles()
             self._output = OutputFiles()
             self._params = Params()
-            self._wildcard_constraints = dict()
-            self.dependencies = dict()
+            self._wildcard_constraints = {}
+            self.dependencies = {}
             self.dynamic_output = set()
             self.dynamic_input = set()
             self.temp_output = set()
             self.protected_output = set()
             self.touch_output = set()
-            self.subworkflow_input = dict()
+            self.subworkflow_input = {}
             self.shadow_depth = None
             self.resources = None
             self.priority = 0
@@ -289,7 +289,7 @@ class Rule:
                     "Rules without output files cannot be cached.", rule=self
                 )
             if len(self.output) > 1:
-                prefixes = set(out.multiext_prefix for out in self.output)
+                prefixes = {out.multiext_prefix for out in self.output}
                 if None in prefixes or len(prefixes) > 1:
                     raise RuleException(
                         "Rules with multiple output files must define them as a single multiext() "
@@ -382,15 +382,14 @@ class Rule:
     def register_wildcards(self, wildcard_names):
         if self._wildcard_names is None:
             self._wildcard_names = wildcard_names
-        else:
-            if self.wildcard_names != wildcard_names:
-                raise SyntaxError(
-                    "Not all output, log and benchmark files of "
-                    "rule {} contain the same wildcards. "
-                    "This is crucial though, in order to "
-                    "avoid that two or more jobs write to the "
-                    "same file.".format(self.name)
-                )
+        elif self.wildcard_names != wildcard_names:
+            raise SyntaxError(
+                "Not all output, log and benchmark files of "
+                "rule {} contain the same wildcards. "
+                "This is crucial though, in order to "
+                "avoid that two or more jobs write to the "
+                "same file.".format(self.name)
+            )
 
     @property
     def wildcard_names(self):
@@ -427,7 +426,7 @@ class Rule:
         """Check ``Namedlist`` for duplicate entries and raise a ``WorkflowError``
         on problems.
         """
-        seen = dict()
+        seen = {}
         idx = None
         for name, value in self.output._allitems():
             if name is None:
@@ -534,16 +533,15 @@ class Rule:
                 self.dependencies[item] = rule_dependency
             if output:
                 item = self._update_item_wildcard_constraints(item)
-            else:
-                if (
+            elif (
                     contains_wildcard_constraints(item)
                     and self.workflow.mode != Mode.subprocess
                 ):
-                    logger.warning(
-                        "Wildcard constraints in inputs are ignored. (rule: {})".format(
-                            self
-                        )
+                logger.warning(
+                    "Wildcard constraints in inputs are ignored. (rule: {})".format(
+                        self
                     )
+                )
 
             if self.workflow.all_temp and output:
                 # mark as temp if all output files shall be marked as temp
@@ -552,15 +550,12 @@ class Rule:
             # record rule if this is an output file output
             _item = IOFile(item, rule=self)
 
-            if is_flagged(item, "temp"):
-                if output:
-                    self.temp_output.add(_item)
-            if is_flagged(item, "protected"):
-                if output:
-                    self.protected_output.add(_item)
-            if is_flagged(item, "touch"):
-                if output:
-                    self.touch_output.add(_item)
+            if is_flagged(item, "temp") and output:
+                self.temp_output.add(_item)
+            if is_flagged(item, "protected") and output:
+                self.protected_output.add(_item)
+            if is_flagged(item, "touch") and output:
+                self.touch_output.add(_item)
             if is_flagged(item, "dynamic"):
                 if output:
                     self.dynamic_output.add(_item)
@@ -580,19 +575,18 @@ class Rule:
             if is_flagged(item, "subworkflow"):
                 if output:
                     raise SyntaxError("Only input files may refer to a subworkflow")
-                else:
-                    # record the workflow this item comes from
-                    sub = item.flags["subworkflow"]
-                    if _item in self.subworkflow_input:
-                        other = self.subworkflow_input[_item]
-                        if sub != other:
-                            raise WorkflowError(
-                                "The input file {} is ambiguously "
-                                "associated with two subworkflows "
-                                "{} and {}.".format(item, sub, other),
-                                rule=self,
-                            )
-                    self.subworkflow_input[_item] = sub
+                # record the workflow this item comes from
+                sub = item.flags["subworkflow"]
+                if _item in self.subworkflow_input:
+                    other = self.subworkflow_input[_item]
+                    if sub != other:
+                        raise WorkflowError(
+                            "The input file {} is ambiguously "
+                            "associated with two subworkflows "
+                            "{} and {}.".format(item, sub, other),
+                            rule=self,
+                        )
+                self.subworkflow_input[_item] = sub
             inoutput.append(_item)
             if name:
                 inoutput._add_name(name)
@@ -712,7 +706,7 @@ class Rule:
                 value = TBDString()
             else:
                 raise e
-        except (Exception, BaseException) as e:
+        except BaseException as e:
             if raw_exceptions:
                 raise e
             else:
@@ -736,7 +730,7 @@ class Rule:
         allow_unpack=True,
     ):
         if aux_params is None:
-            aux_params = dict()
+            aux_params = {}
         for name, item in olditems._allitems():
             start = len(newitems)
             is_unpack = is_flagged(item, "unpack")
@@ -807,20 +801,19 @@ class Rule:
 
     def expand_input(self, wildcards):
         def concretize_iofile(f, wildcards, is_from_callable):
-            if is_from_callable:
-                if isinstance(f, Path):
-                    f = str(f)
-                return IOFile(f, rule=self).apply_wildcards(
-                    wildcards,
-                    fill_missing=f in self.dynamic_input,
-                    fail_dynamic=self.dynamic_output,
-                )
-            else:
+            if not is_from_callable:
                 return f.apply_wildcards(
                     wildcards,
                     fill_missing=f in self.dynamic_input,
                     fail_dynamic=self.dynamic_output,
                 )
+            if isinstance(f, Path):
+                f = str(f)
+            return IOFile(f, rule=self).apply_wildcards(
+                wildcards,
+                fill_missing=f in self.dynamic_input,
+                fail_dynamic=self.dynamic_output,
+            )
 
         def handle_incomplete_checkpoint(exception):
             """If checkpoint is incomplete, target it such that it is completed
@@ -925,7 +918,7 @@ class Rule:
     def expand_output(self, wildcards):
         output = OutputFiles(o.apply_wildcards(wildcards) for o in self.output)
         output._take_names(self.output._get_names())
-        mapping = {f: f_ for f, f_ in zip(output, self.output)}
+        mapping = dict(zip(output, self.output))
 
         for f in output:
             f.check()
@@ -998,7 +991,7 @@ class Rule:
                         raw_exceptions=True,
                         **aux
                     )
-                except (Exception, BaseException) as e:
+                except BaseException as e:
                     raise InputFunctionException(e, rule=self, wildcards=wildcards)
 
             if isinstance(res, float):
@@ -1061,10 +1054,7 @@ class Rule:
         Returns True if this rule is a producer of the requested output.
         """
         try:
-            for o in self.products:
-                if o.match(requested_output):
-                    return True
-            return False
+            return any(o.match(requested_output) for o in self.products)
         except sre_constants.error as ex:
             raise IOFileException(
                 "{} in wildcard statement".format(ex),
@@ -1129,7 +1119,7 @@ class Rule:
 
 class Ruleorder:
     def __init__(self):
-        self.order = list()
+        self.order = []
 
     def add(self, *rulenames):
         """

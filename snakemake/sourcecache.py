@@ -20,7 +20,7 @@ from snakemake.logging import logger
 
 
 def _check_git_args(tag: str = None, branch: str = None, commit: str = None):
-    n_refs = sum(1 for ref in (tag, branch, commit) if ref is not None)
+    n_refs = sum(ref is not None for ref in (tag, branch, commit))
     if n_refs != 1:
         raise SourceFileError(
             "exactly one of tag, branch, or commit must be specified."
@@ -304,8 +304,7 @@ class SourceCache:
         return True
 
     def get_path(self, source_file, mode="r"):
-        cache_entry = self._cache(source_file)
-        return cache_entry
+        return self._cache(source_file)
 
     def _cache_entry(self, source_file):
         urihash = source_file.get_uri_hash()

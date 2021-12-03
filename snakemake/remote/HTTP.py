@@ -72,11 +72,7 @@ class RemoteProvider(AbstractRemoteProvider):
                         "insecure=False cannot be used with a http:// url"
                     )
             else:
-                if insecure:
-                    values[i] = "http://" + file
-                else:
-                    values[i] = "https://" + file
-
+                values[i] = "http://" + file if insecure else "https://" + file
         return super(RemoteProvider, self).remote(values, *args, **kwargs)
 
 
@@ -113,11 +109,7 @@ class RemoteObject(DomainObject):
         # use kwargs passed in to remote() to override those given to the RemoteProvider()
         # default to the host and port given as part of the file, falling back to one specified
         # as a kwarg to remote() or the RemoteProvider (overriding the latter with the former if both)
-        kwargs_to_use = {}
-        kwargs_to_use["username"] = None
-        kwargs_to_use["password"] = None
-        kwargs_to_use["auth"] = None
-
+        kwargs_to_use = {'username': None, 'password': None, 'auth': None}
         for k, v in self.provider.kwargs.items():
             kwargs_to_use[k] = v
         for k, v in self.kwargs.items():
@@ -155,87 +147,81 @@ class RemoteObject(DomainObject):
         r.close()
 
     def exists(self):
-        if self._matched_address:
-            with self.httpr(verb="HEAD") as httpr:
-                # if a file redirect was found
-                if httpr.status_code in range(300, 308):
-                    raise HTTPFileException(
-                        "The file specified appears to have been moved (HTTP %s), check the URL or try adding 'allow_redirects=True' to the remote() file object: %s"
-                        % (httpr.status_code, httpr.url)
-                    )
-                return httpr.status_code == requests.codes.ok
-            return False
-        else:
+        if not self._matched_address:
             raise HTTPFileException(
                 "The file cannot be parsed as an HTTP path in form 'host:port/abs/path/to/file': %s"
                 % self.local_file()
             )
+        with self.httpr(verb="HEAD") as httpr:
+            # if a file redirect was found
+            if httpr.status_code in range(300, 308):
+                raise HTTPFileException(
+                    "The file specified appears to have been moved (HTTP %s), check the URL or try adding 'allow_redirects=True' to the remote() file object: %s"
+                    % (httpr.status_code, httpr.url)
+                )
+            return httpr.status_code == requests.codes.ok
+        return False
 
     def mtime(self):
-        if self.exists():
-            with self.httpr(verb="HEAD") as httpr:
-
-                file_mtime = self.get_header_item(httpr, "last-modified", default=None)
-                logger.debug("HTTP last-modified: {}".format(file_mtime))
-
-                epochTime = 0
-
-                if file_mtime is not None:
-                    modified_tuple = email.utils.parsedate_tz(file_mtime)
-                    if modified_tuple is None:
-                        logger.debug(
-                            "HTTP last-modified not in RFC2822 format: `{}`".format(
-                                file_mtime
-                            )
-                        )
-                    else:
-                        epochTime = email.utils.mktime_tz(modified_tuple)
-
-                return epochTime
-        else:
+        if not self.exists():
             raise HTTPFileException(
                 "The file does not seem to exist remotely: %s" % self.remote_file()
             )
+        with self.httpr(verb="HEAD") as httpr:
+
+            file_mtime = self.get_header_item(httpr, "last-modified", default=None)
+            logger.debug("HTTP last-modified: {}".format(file_mtime))
+
+            epochTime = 0
+
+            if file_mtime is not None:
+                modified_tuple = email.utils.parsedate_tz(file_mtime)
+                if modified_tuple is None:
+                    logger.debug(
+                        "HTTP last-modified not in RFC2822 format: `{}`".format(
+                            file_mtime
+                        )
+                    )
+                else:
+                    epochTime = email.utils.mktime_tz(modified_tuple)
+
+            return epochTime
 
     def size(self):
-        if self.exists():
-            with self.httpr(verb="HEAD") as httpr:
+        if not self.exists():
+            return self._iofile.size_local
+        with self.httpr(verb="HEAD") as httpr:
 
-                content_size = int(
+            return int(
                     self.get_header_item(httpr, "content-size", default=0)
                 )
 
-                return content_size
-        else:
-            return self._iofile.size_local
-
     def download(self, make_dest_dirs=True):
         with self.httpr(stream=True) as httpr:
-            if self.exists():
-                # Find out if the source file is gzip compressed in order to keep
-                # compression intact after the download.
-                # Per default requests decompresses .gz files.
-                # More detials can be found here: https://stackoverflow.com/questions/25749345/how-to-download-gz-files-with-requests-in-python-without-decoding-it?noredirect=1&lq=1
-                # Since data transferred with HTTP compression need to be decompressed automatically
-                # check the header and decode if the content is encoded.
-                if (
-                    not self.name.endswith(".gz")
-                    and httpr.headers.get("Content-Encoding") == "gzip"
-                ):
-                    # Decode non-gzipped sourcefiles automatically.
-                    # This is needed to decompress uncompressed files that are compressed
-                    # for the transfer by HTTP compression.
-                    httpr.raw.decode_content = True
-                # if the destination path does not exist
-                if make_dest_dirs:
-                    os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
-                    with open(self.local_path, "wb") as f:
-                        shutil.copyfileobj(httpr.raw, f)
-                    os_sync()  # ensure flush to disk
-            else:
+            if not self.exists():
                 raise HTTPFileException(
                     "The file does not seem to exist remotely: %s" % self.remote_file()
                 )
+            # Find out if the source file is gzip compressed in order to keep
+            # compression intact after the download.
+            # Per default requests decompresses .gz files.
+            # More detials can be found here: https://stackoverflow.com/questions/25749345/how-to-download-gz-files-with-requests-in-python-without-decoding-it?noredirect=1&lq=1
+            # Since data transferred with HTTP compression need to be decompressed automatically
+            # check the header and decode if the content is encoded.
+            if (
+                not self.name.endswith(".gz")
+                and httpr.headers.get("Content-Encoding") == "gzip"
+            ):
+                # Decode non-gzipped sourcefiles automatically.
+                # This is needed to decompress uncompressed files that are compressed
+                # for the transfer by HTTP compression.
+                httpr.raw.decode_content = True
+            # if the destination path does not exist
+            if make_dest_dirs:
+                os.makedirs(os.path.dirname(self.local_path), exist_ok=True)
+                with open(self.local_path, "wb") as f:
+                    shutil.copyfileobj(httpr.raw, f)
+                os_sync()  # ensure flush to disk
 
     def upload(self):
         raise HTTPFileException(

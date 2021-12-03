@@ -16,7 +16,7 @@ fmt_time = time.ctime
 class Stats:
     def __init__(self):
         self.starttime = dict()
-        self.endtime = dict()
+        self.endtime = {}
 
     def report_job_start(self, job):
         if job.is_group():
